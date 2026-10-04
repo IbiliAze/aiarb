@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+
+# Tool caches
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# LangGraph dev server
+.langgraph_api/
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# aiarb run output (the charter in .aiarb/ is committed)
+.aiarb/runs/
+
+# OS
+.DS_Store

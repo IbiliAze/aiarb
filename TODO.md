@@ -14,11 +14,11 @@
 
 ## 1. Project setup
 
-- [ ] Create the repo with the agreed directory structure and `src/` layout
-- [ ] Write `pyproject.toml`: dependencies, `aiarb` entry point, ruff, strict mypy, pytest
-- [ ] Add `.env.example`, `.gitignore` (include `.aiarb/runs/`), licence, README stub
-- [ ] Add the CI workflow: lint, type-check, tests
-- [ ] Publish a placeholder package to hold the `aiarb` name
+- [x] Create the repo with the agreed directory structure and `src/` layout
+- [x] Write `pyproject.toml`: dependencies, `aiarb` entry point, ruff, strict mypy, pytest
+- [x] Add `.env.example`, `.gitignore` (include `.aiarb/runs/`), licence, README stub
+- [x] Add the CI workflow: lint, type-check, tests
+- [ ] ~~Publish a placeholder package to hold the `aiarb` name~~
 
 ## 2. Domain (plain Python)
 

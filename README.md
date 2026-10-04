@@ -208,4 +208,4 @@ Inspired by [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) by Virat S
 
 ## Licence
 
-To be confirmed.
+[MIT](./LICENSE)
