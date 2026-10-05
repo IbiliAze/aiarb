@@ -45,7 +45,7 @@
 ## 5. Graph on fakes
 
 - [x] Define the state schema with reducers for the ledger and cost totals
-- [ ] Define the runtime context: charter plus the injected ports
+- [x] Define the runtime context: charter plus the injected ports
 - [ ] Write each node as a small function returning a state update
 - [ ] Write the routing functions: next round, stalemate, round limit, judge needed, decisions needed
 - [ ] Assemble the graph in `build_graph()` with retry policies and timeouts on agent nodes
