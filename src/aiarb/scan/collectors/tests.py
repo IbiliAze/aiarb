@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 from aiarb.scan.collectors.stack import LANGUAGES
 from aiarb.scan.manifests import manifests
-from aiarb.scan.section import Section
+from aiarb.scan.section import Section, count
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
@@ -63,13 +63,13 @@ def collect(files: RepoFiles) -> Section:
     tests = [path for path in code if is_test(path)]
     sources = len(code) - len(tests)
     if not tests:
-        facts = [f"No test files found, against {sources} source files."]
+        facts = [f"No test files found, against {count(sources, 'source file')}."]
     else:
-        facts = [f"Test files: {len(tests)}, against {sources} source files."]
+        facts = [f"Test files: {len(tests)}, against {count(sources, 'source file')}."]
         folders = Counter(f"{path.parent}/" for path in tests)
         facts.append(
             "Where they are: "
-            + ", ".join(f"{folder} ({count})" for folder, count in folders.most_common(TOP_FOLDERS))
+            + ", ".join(f"{folder} ({n})" for folder, n in folders.most_common(TOP_FOLDERS))
         )
     frameworks = {
         FRAMEWORKS[name]

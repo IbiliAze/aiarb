@@ -58,6 +58,8 @@ packages = ["src/aiarb"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests"]
+# Small repos the scan tests read: they are data, not this project's code.
+extend-exclude = ["tests/fixtures/repos"]
 
 [tool.ruff.lint]
 select = [
@@ -86,6 +88,7 @@ mypy_path = "src"
 packages = ["aiarb", "tests"]
 plugins = ["pydantic.mypy"]
 warn_unreachable = true
+exclude = ["^tests/fixtures/repos/"]
 
 [tool.pydantic-mypy]
 init_forbid_extra = true
@@ -94,6 +97,8 @@ warn_required_dynamic_aliases = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The fixture repos contain their own tests, which are not ours to run.
+norecursedirs = ["tests/fixtures", ".*", "*.egg", "build", "dist", "node_modules", ".venv"]
 addopts = ["--strict-markers", "--strict-config", "-ra"]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"

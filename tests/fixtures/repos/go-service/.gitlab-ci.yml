@@ -1,0 +1,21 @@
+stages: [test, build, deploy]
+
+variables:
+  GO_VERSION: "1.23"
+
+test:
+  stage: test
+  script:
+    - go vet ./...
+    - go test ./...
+
+build:
+  stage: build
+  script:
+    - docker build -t queue .
+
+deploy:
+  stage: deploy
+  script:
+    - kubectl apply -f deploy/k8s
+  when: manual

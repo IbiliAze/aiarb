@@ -6,7 +6,7 @@ from collections import Counter
 from typing import TYPE_CHECKING
 
 from aiarb.scan.git import git
-from aiarb.scan.section import Section
+from aiarb.scan.section import Section, count
 
 if TYPE_CHECKING:
     from aiarb.scan.files import RepoFiles
@@ -17,13 +17,13 @@ LISTED = 10
 
 def collect(files: RepoFiles) -> Section | None:
     since = f"--since={WINDOW_DAYS}.days"
-    count = git(files.root, "rev-list", "--count", "--no-merges", since, "HEAD", "--", ".")
-    if count is None:
+    total = git(files.root, "rev-list", "--count", "--no-merges", since, "HEAD", "--", ".")
+    if total is None:
         return None
     latest = (git(files.root, "log", "-1", "--format=%cs", "--", ".") or "").strip()
-    commits = int(count.strip() or 0)
+    commits = int(total.strip() or 0)
     facts = [
-        f"{commits} commits in the last {WINDOW_DAYS} days"
+        f"{count(commits, 'commit')} in the last {WINDOW_DAYS} days"
         + (f", the latest on {latest}" if latest else "")
     ]
     log = git(

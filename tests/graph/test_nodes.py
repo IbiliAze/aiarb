@@ -102,14 +102,13 @@ def state(*items: Objection, round: int = 0, **fields: Any) -> RunState:
     return base
 
 
-def test_scan_lists_the_repo_without_its_git_folder(tmp_path: Path) -> None:
-    (tmp_path / ".git").mkdir()
-    (tmp_path / "src").mkdir()
-    (tmp_path / "README.md").write_text("")
+def test_scan_writes_the_fact_sheet(tmp_path: Path) -> None:
+    (tmp_path / "app.py").write_text("")
 
     update = scan(state(), runtime(tmp_path))
 
-    assert update == {"facts": "Top-level entries:\n- README.md\n- src/"}
+    assert update["facts"].startswith("# Repo facts\n")
+    assert "- Languages: Python (1 file)" in update["facts"]
 
 
 class TestDraftPlan:

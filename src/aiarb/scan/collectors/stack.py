@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 from aiarb.scan.files import MAX_FILES
 from aiarb.scan.manifests import manifests
-from aiarb.scan.section import Section
+from aiarb.scan.section import Section, count
 
 if TYPE_CHECKING:
     from aiarb.scan.files import RepoFiles
@@ -39,6 +39,7 @@ LANGUAGES = {
     ".cpp": "C++",
     ".cc": "C++",
     ".hpp": "C++",
+    ".sh": "Shell",
 }
 """Source files by extension. Markup, data and config are left out."""
 
@@ -73,6 +74,9 @@ FRAMEWORKS = {
     "symfony/framework-bundle": "Symfony",
 }
 
+RUNTIMES = {"npm": "Node"}
+"""The runtime a manifest's version is for, where it is not named for its ecosystem."""
+
 VERSION_FILES = (".python-version", ".nvmrc", ".node-version", ".ruby-version", ".tool-versions")
 
 TOP_LANGUAGES = 6
@@ -87,7 +91,8 @@ def collect(files: RepoFiles) -> Section | None:
         facts.append(
             "Languages: "
             + ", ".join(
-                f"{name} ({count} files)" for name, count in languages.most_common(TOP_LANGUAGES)
+                f"{name} ({count(files, 'file')})"
+                for name, files in languages.most_common(TOP_LANGUAGES)
             )
         )
     found = manifests(files)
@@ -102,7 +107,8 @@ def collect(files: RepoFiles) -> Section | None:
     if frameworks:
         facts.append(f"Frameworks: {', '.join(frameworks)}")
     runtimes = [
-        f"{manifest.ecosystem} {manifest.runtime} ({manifest.path})"
+        f"{RUNTIMES.get(manifest.ecosystem, manifest.ecosystem)} {manifest.runtime} "
+        f"({manifest.path})"
         for manifest in found
         if manifest.runtime
     ]

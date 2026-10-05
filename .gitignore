@@ -23,8 +23,9 @@ htmlcov/
 .env.*
 !.env.example
 
-# aiarb run output (the charter in .aiarb/ is committed)
+# aiarb run output and scan cache (the charter in .aiarb/ is committed)
 .aiarb/runs/
+.aiarb/cache/
 
 # OS
 .DS_Store

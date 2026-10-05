@@ -64,8 +64,8 @@
 ## 7. Repo scan
 
 - [x] Write collectors: stack, dependencies, tests, infrastructure files, CI config, git churn
-- [ ] Assemble and cache the fact sheet, keyed on the commit hash
-- [ ] Test against the fixture repos
+- [x] Assemble and cache the fact sheet, keyed on the commit hash
+- [x] Test against the fixture repos
 
 ## 8. Claude Code adapter
 

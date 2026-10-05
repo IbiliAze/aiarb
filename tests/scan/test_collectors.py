@@ -33,7 +33,7 @@ class TestStack:
         )
 
         assert facts(stack.collect(files)) == [
-            "Languages: Python (2 files), TypeScript (1 files)",
+            "Languages: Python (2 files), TypeScript (1 file)",
             "Frameworks: FastAPI, Next.js, React",
             "Runtime versions: Python >=3.12 (pyproject.toml), 20.11 (.nvmrc)",
         ]
@@ -99,7 +99,7 @@ class TestTests:
 
     def test_no_tests_is_itself_a_fact(self, tmp_path: Path) -> None:
         assert facts(tests.collect(scan(tmp_path, {"app.rb": ""}))) == [
-            "No test files found, against 1 source files."
+            "No test files found, against 1 source file."
         ]
 
 

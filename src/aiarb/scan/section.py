@@ -9,3 +9,8 @@ class Section:
 
     title: str
     facts: tuple[str, ...]
+
+
+def count(number: int, noun: str) -> str:
+    """`1 file`, `2 files`."""
+    return f"{number} {noun}" if number == 1 else f"{number} {noun}s"

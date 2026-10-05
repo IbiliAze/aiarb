@@ -6,7 +6,7 @@ import re
 from collections import Counter
 from typing import TYPE_CHECKING
 
-from aiarb.scan.section import Section
+from aiarb.scan.section import Section, count
 
 if TYPE_CHECKING:
     from pathlib import PurePosixPath
@@ -28,7 +28,8 @@ PLATFORM_FILES = (
     "cdk.json",
 )
 KUBERNETES_FOLDERS = frozenset({"k8s", "kubernetes", "helm", "charts", "manifests"})
-MIGRATION_FOLDERS = ("migrations", "alembic", "db/migrate", "prisma/migrations")
+MIGRATION_FOLDERS = ("prisma/migrations", "db/migrate", "migrations", "alembic")
+"""Most specific first, so a file is counted once, under the folder that names it best."""
 ENV_EXAMPLES = (".env.example", ".env.sample", ".env.template")
 """Read for variable names only. A real `.env` is never read."""
 
@@ -64,7 +65,7 @@ def collect(files: RepoFiles) -> Section | None:
     if terraform:
         facts.append(
             "Terraform: "
-            + ", ".join(f"{folder} ({count} files)" for folder, count in sorted(terraform.items()))
+            + ", ".join(f"{folder} ({count(n, 'file')})" for folder, n in sorted(terraform.items()))
         )
 
     platforms = files.named(*PLATFORM_FILES)
@@ -72,10 +73,7 @@ def collect(files: RepoFiles) -> Section | None:
         facts.append(f"Hosting and deploy config: {_list(platforms)}")
 
     migrations = Counter(
-        folder
-        for path in files.paths
-        for folder in MIGRATION_FOLDERS
-        if f"/{folder}/" in f"/{path.parent}/"
+        folder for path in files.paths if (folder := _migrations_folder(path)) is not None
     )
     if files.has("prisma/schema.prisma"):
         facts.append("Database schema: prisma/schema.prisma")
@@ -83,7 +81,7 @@ def collect(files: RepoFiles) -> Section | None:
         facts.append(
             "Migrations: "
             + ", ".join(
-                f"{folder}/ ({count} files)" for folder, count in sorted(migrations.items())
+                f"{folder} ({count(n, 'file')})" for folder, n in sorted(migrations.items())
             )
         )
 
@@ -93,6 +91,16 @@ def collect(files: RepoFiles) -> Section | None:
             facts.append(f"Environment variables ({path}): {', '.join(names)}")
 
     return Section("Infrastructure", tuple(facts)) if facts else None
+
+
+def _migrations_folder(path: PurePosixPath) -> str | None:
+    """The migrations folder a file is in, as a path from the root: `prisma/migrations/`."""
+    parent = f"/{path.parent}/"
+    for folder in MIGRATION_FOLDERS:
+        at = parent.find(f"/{folder}/")
+        if at != -1:
+            return parent[1 : at + len(folder) + 2]
+    return None
 
 
 def _base_images(files: RepoFiles, path: PurePosixPath) -> list[str]:
