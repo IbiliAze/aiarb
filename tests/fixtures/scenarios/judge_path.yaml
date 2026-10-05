@@ -36,6 +36,13 @@ agent:
   - schema: JudgeRuling
     contains: OBJ-3
     output: {favours: critic, ruling: Read the batch size from config., reason: It changes during a sale.}
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: Checkout may not take 500 users, problem: Checkout may not cope with 500 users at once., consequence: Checkout could fail at the start of a sale., outcome: "Left as a task: load test checkout first."}
+        - {id: OBJ-2, title: Fairness against speed, problem: Small batches are fairer but slower., consequence: Either some users wait longer or the queue is less fair., outcome: "Left for you to decide."}
+        - {id: OBJ-3, title: The batch size is hard-coded, problem: Changing the batch size needs a deploy., consequence: Tuning during a sale would be slow., outcome: "The judge ruled for the critic."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}
   - {call: score, contains: OBJ-2, value: 0.4}

@@ -4,8 +4,8 @@ The context is passed with each invocation and is never checkpointed, so the
 ports can be real adapters or scripted fakes, and `resume` builds it afresh
 from the charter and the environment.
 
-The ports are left out of the context's JSON schema, which LangGraph Studio
-reads to offer a context form: they are objects, not settings.
+The ports and the run folder are left out of the context's JSON schema, which
+LangGraph Studio reads to offer a context form: they are not settings.
 """
 
 from __future__ import annotations
@@ -35,8 +35,13 @@ class RunContext:
     confirmer: Annotated[Scorer, SkipJsonSchema()]
     """A language model that confirms blocker calls, which decide that a plan is
     not ready. It may be the scorer itself."""
+    run_dir: Annotated[Path | None, SkipJsonSchema()] = None
+    """The run's folder, named by its ID, where the final step writes the run's
+    files. None writes no files, as in Studio. The runner sets it."""
 
     def __post_init__(self) -> None:
         if not self.repo.is_dir():
             raise ValueError(f"the repo to review must be a directory: {self.repo}")
         object.__setattr__(self, "repo", self.repo.resolve())
+        if self.run_dir is not None:
+            object.__setattr__(self, "run_dir", self.run_dir.resolve())

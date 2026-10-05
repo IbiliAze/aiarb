@@ -214,6 +214,21 @@ class Scenario:
         self.scorer.assert_finished()
 
 
+def explanation(*ids: str) -> dict[str, Any]:
+    """An agent step with the explainer's answer for these objections."""
+    items = [
+        {
+            "id": id,
+            "title": f"Title {id}",
+            "problem": f"Problem {id}.",
+            "consequence": f"Consequence {id}.",
+            "outcome": f"Outcome {id}.",
+        }
+        for id in ids
+    ]
+    return {"schema": "Explanation", "output": {"summary": "Summary.", "items": items}}
+
+
 def _preview(text: str, limit: int = 60) -> str:
     flat = " ".join(text.split())
     return repr(flat if len(flat) <= limit else flat[: limit - 1] + "…")

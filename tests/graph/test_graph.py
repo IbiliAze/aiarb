@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -6,9 +7,11 @@ import pytest
 import yaml
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.config import get_config
 from langgraph.errors import GraphRecursionError, NodeTimeoutError
 from langgraph.types import Command, RetryPolicy
 
+from aiarb import output
 from aiarb.config.charter import Charter
 from aiarb.domain.ledger import Actor, Status
 from aiarb.domain.outcome import RunStatus
@@ -19,7 +22,7 @@ from aiarb.graph.context import RunContext
 from aiarb.graph.state import RunState, checkpoint_serializer, initial_state, total_cost
 from aiarb.ports.calls import Cost, FatalCallError, RetryableCallError
 from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
-from tests.fakes import Scenario, ScriptedScorer
+from tests.fakes import Scenario, ScriptedScorer, explanation
 
 SCENARIOS = Path(__file__).parent.parent / "fixtures" / "scenarios"
 
@@ -38,6 +41,7 @@ async def run(
     retry_policy: RetryPolicy = NO_WAIT,
     config: RunnableConfig | None = None,
     decisions: dict[str, str] | None = None,
+    run_dir: Path | None = None,
 ) -> RunState:
     """Run a scenario in memory, giving `decisions` if it pauses for them."""
     rules = charter(max_rounds)
@@ -47,6 +51,7 @@ async def run(
         agent=scenario.agent,
         scorer=scenario.scorer,
         confirmer=scenario.scorer,
+        run_dir=run_dir,
     )
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()), retry_policy=retry_policy
@@ -227,6 +232,7 @@ def worst_case(rounds: int, type: str) -> Scenario:
     if type == "design":
         ruling = {"favours": "critic", "ruling": "Do.", "reason": "Because."}
         agent.append({"schema": "JudgeRuling", "output": ruling})
+        agent.append(explanation("OBJ-1", "OBJ-2"))
     scorer = [
         {"call": "score", "contains": "OBJ-1", "value": 0.6},
         {"call": "score", "contains": "OBJ-2", "value": 0.6},
@@ -370,3 +376,31 @@ async def test_costs_are_counted_per_role(tmp_path: Path) -> None:
     assert final["costs"]["planner"] == Cost(usd=2.5)
     assert final["costs"]["critic"] == Cost(usd=1.25)
     assert final["costs"]["scorer"].usd == pytest.approx(0.02)
+
+
+class TestOutput:
+    async def test_only_the_final_step_writes_and_it_writes_every_file(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        writers: list[str] = []
+        write = output.write
+
+        def spy(folder: Path, files: Mapping[str, str]) -> None:
+            writers.append(get_config()["metadata"]["langgraph_node"])
+            write(folder, files)
+
+        monkeypatch.setattr(output, "write", spy)
+        run_dir = tmp_path / "runs" / "2026-10-05-waiting-room"
+
+        await run(
+            tmp_path,
+            from_yaml("judge_path"),
+            max_rounds=1,
+            decisions={"OBJ-2": "Speed matters more."},
+            run_dir=run_dir,
+        )
+
+        assert writers == ["finalise"]
+        assert sorted(path.name for path in run_dir.iterdir()) == sorted(output.FILES)
+        assert "> **OBJ-3, ruled by the judge:**" in (run_dir / "plan.md").read_text()
+        assert "Speed matters more." in (run_dir / "decisions.md").read_text()

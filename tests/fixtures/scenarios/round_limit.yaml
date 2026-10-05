@@ -47,6 +47,12 @@ agent:
           verdict: accept
           note: No polling now.
           resolution: {kind: plan_change, sections: [{kind: plan, section: Queue}]}
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: Redis may not take the polling, problem: One poll per second per user may overload Redis., consequence: The queue could stall at peak., outcome: "Left as a task: load test Redis first."}
+        - {id: OBJ-2, title: Polling drains batteries, problem: Phones poll every second., consequence: Waiting users' batteries would drain., outcome: "Resolved in the debate."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}
   - {call: score, contains: OBJ-2, value: 0.3}

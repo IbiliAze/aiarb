@@ -25,6 +25,11 @@ agent:
         finding: unverifiable
         note: The engine is set at deploy time, not in the repo.
         task: Check the table engine on the production database.
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: Checkout may stall on table locks, problem: The sessions table may lock on every write., consequence: Checkout would stall for everyone at peak., outcome: "Unsettled: check the production table engine before building."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.9}
   - {call: score, contains: OBJ-1, value: 0.85}

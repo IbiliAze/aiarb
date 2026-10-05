@@ -17,6 +17,7 @@ from aiarb.domain.ledger import Objection
 from aiarb.domain.outcome import RunStatus
 from aiarb.domain.scoring import Severity
 from aiarb.ports.calls import Cost
+from aiarb.schemas.outputs import ExplainedItem, Explanation
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
@@ -81,6 +82,8 @@ class RunState(TypedDict):
     ledger: Annotated[dict[str, Objection], merge_ledger]
     costs: Annotated[dict[Role, Cost], add_costs]
     sessions: Annotated[dict[Role, str], merge_sessions]
+    explanation: Explanation | None
+    """The ledger in plain English, from the explainer once the debate is over."""
     status: RunStatus | None
     """How the run ended. None until it finishes."""
 
@@ -94,6 +97,7 @@ class StateUpdate(TypedDict, total=False):
     ledger: dict[str, Objection]
     costs: dict[Role, Cost]
     sessions: dict[Role, str]
+    explanation: Explanation
     status: RunStatus
 
 
@@ -108,6 +112,7 @@ def initial_state(*, feature: str | None = None, given_plans: Sequence[str] = ()
         ledger={},
         costs={},
         sessions={},
+        explanation=None,
         status=None,
     )
 
@@ -131,6 +136,8 @@ CHECKPOINT_TYPES: tuple[tuple[str, str], ...] = tuple(
         Severity,
         RunStatus,
         Cost,
+        Explanation,
+        ExplainedItem,
     )
 )
 """Every class that can appear in the state, for the checkpoint allow-list."""

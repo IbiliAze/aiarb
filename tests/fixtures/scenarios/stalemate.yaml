@@ -30,5 +30,10 @@ agent:
       favours: critic
       ruling: Key the queue place on the account, not the cookie.
       reason: A cleared cookie is enough to hold two places.
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: A user can queue twice, problem: Per-region queues let a user hold two places., consequence: Some users would jump the queue., outcome: "The judge ruled."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}

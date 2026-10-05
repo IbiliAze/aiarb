@@ -7,10 +7,11 @@
     verify   → respond for another round, judge at the round limit or on a
                stalemate, or rescore once nothing is open
     judge    → decide if trade-offs are left for the user, otherwise rescore
-    decide   → rescore → finalise
+    decide   → rescore → explain → finalise
 
 Agent nodes retry calls that are worth retrying, and each attempt has a time
-limit. The routers in `routing.py` decide every branch.
+limit. The routers in `routing.py` decide every branch. Only `finalise` writes
+files.
 """
 
 from __future__ import annotations
@@ -58,6 +59,7 @@ TIMEOUTS: Mapping[str, timedelta] = {
     "judge": timedelta(minutes=30),
     "triage": timedelta(minutes=10),
     "rescore": timedelta(minutes=10),
+    "explain": timedelta(minutes=30),
 }
 """How long one attempt of each node that makes outside calls may run.
 
@@ -66,10 +68,11 @@ can take an hour on a large codebase. Later turns resume those sessions and
 cover only the open items.
 """
 
-_FIXED_STEPS = 7
+_FIXED_STEPS = 8
 """The most steps outside the rounds in one invocation: scan, draft_plan,
-critique, triage, judge, rescore and finalise. A run that needs decisions pauses
-at decide instead, and is finished by a later invocation with its own count."""
+critique, triage, judge, rescore, explain and finalise. A run that needs
+decisions pauses at decide instead, and is finished by a later invocation with
+its own count."""
 
 _STEPS_PER_ROUND = 3
 """respond, rule and verify."""
@@ -104,6 +107,7 @@ def build_graph(
     graph.add_node("judge", nodes.judge, retry_policy=retry_policy, timeout=TIMEOUTS["judge"])  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("decide", nodes.decide)  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("rescore", nodes.rescore, retry_policy=retry_policy, timeout=TIMEOUTS["rescore"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("explain", nodes.explain, retry_policy=retry_policy, timeout=TIMEOUTS["explain"])  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("finalise", nodes.finalise)  # pyright: ignore[reportUnknownMemberType]
 
     graph.add_edge(START, "scan")
@@ -116,7 +120,8 @@ def build_graph(
     graph.add_conditional_edges("verify", routing.after_round)
     graph.add_conditional_edges("judge", routing.after_judge)
     graph.add_edge("decide", "rescore")
-    graph.add_edge("rescore", "finalise")
+    graph.add_edge("rescore", "explain")
+    graph.add_edge("explain", "finalise")
     graph.add_edge("finalise", END)
 
     return graph.compile(checkpointer=checkpointer, name="aiarb")  # pyright: ignore[reportUnknownMemberType]

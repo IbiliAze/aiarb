@@ -33,11 +33,10 @@ from aiarb.domain.ledger import (
 from aiarb.domain.scoring import Severity
 from aiarb.graph import prompts
 from aiarb.graph.context import RunContext
-from aiarb.graph.nodes import critique, draft_plan, judge, respond, rule, verify
-from aiarb.graph.nodes._calls import ask, by_id
+from aiarb.graph.nodes import critique, draft_plan, explain, judge, respond, rule, verify
 from aiarb.graph.state import RunState, initial_state
+from aiarb.output import Report, ledger, plan
 from aiarb.scan.facts import build
-from aiarb.schemas.outputs import Explanation
 from tests.fakes import ScriptedScorer
 
 pytestmark = pytest.mark.skipif(
@@ -274,14 +273,13 @@ async def test_the_explainer_explains_every_objection(repo: Path) -> None:
         note="Unsettled at the round limit: becomes a task to run before building.",
     )
     items = [resolved, deferred]
+    before = state(repo, *items, plan=REVISED)
 
-    result = await ask(
-        runtime(repo),
-        "explainer",
-        prompts.explain(state(repo, *items, plan=REVISED)),
-        Explanation,
-    )
+    update = await explain(before, runtime(repo))
 
-    show("explainer", result.output.model_dump_json(indent=2))
-    explained = by_id("explainer", result.output.items, items, result.cost)
-    assert list(explained) == ["OBJ-1", "OBJ-2"]
+    explanation = update["explanation"]
+    assert [item.id for item in explanation.items] == ["OBJ-1", "OBJ-2"]
+    before.update({"explanation": explanation})
+    report = Report.of(before, CHARTER, run_id="live")
+    show("explainer: ledger.md", ledger.render(report))
+    show("plan.md", plan.render(report))

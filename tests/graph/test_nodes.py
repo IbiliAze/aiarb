@@ -1,3 +1,4 @@
+import json
 from collections.abc import Sequence
 from dataclasses import replace
 from pathlib import Path
@@ -24,6 +25,7 @@ from aiarb.graph.context import RunContext
 from aiarb.graph.nodes import (
     critique,
     draft_plan,
+    explain,
     finalise,
     judge,
     rescore,
@@ -568,6 +570,70 @@ class TestRescore:
     ],
 )
 def test_finalise_records_how_the_run_ended(
-    items: tuple[Objection, ...], status: RunStatus
+    tmp_path: Path, items: tuple[Objection, ...], status: RunStatus
 ) -> None:
-    assert finalise(state(*items)) == {"status": status}
+    assert finalise(state(*items), runtime(tmp_path)) == {"status": status}
+
+
+class TestFinalise:
+    def test_writes_the_runs_files_to_its_folder(self, tmp_path: Path) -> None:
+        run_dir = tmp_path / ".aiarb" / "runs" / "2026-10-05-queue"
+        rt = runtime(tmp_path)
+        rt = Runtime(context=replace(rt.context, run_dir=run_dir))
+
+        finalise(state(objection("OBJ-1"), plan="## Queue\n\nKeep places in memory."), rt)
+
+        assert sorted(path.name for path in run_dir.iterdir()) == [
+            "decisions.md",
+            "ledger.md",
+            "plan.md",
+            "run.json",
+        ]
+        assert json.loads((run_dir / "run.json").read_text())["run_id"] == "2026-10-05-queue"
+
+    def test_writes_nothing_without_a_run_folder(self, tmp_path: Path) -> None:
+        finalise(state(objection("OBJ-1")), runtime(tmp_path))
+
+        assert list(tmp_path.iterdir()) == []
+
+
+class TestExplain:
+    async def test_explains_every_objection_on_the_explainers_model(self, tmp_path: Path) -> None:
+        items = [
+            {
+                "id": id,
+                "title": "Places are lost",
+                "problem": "Places live in memory.",
+                "consequence": "A restart drops the queue.",
+                "outcome": "Fixed.",
+            }
+            for id in ("OBJ-1", "OBJ-2")
+        ]
+        output = {"summary": "Two problems, both fixed.", "items": items}
+        rt = runtime(
+            tmp_path,
+            agent=[{"schema": "Explanation", "output": output, "cost": {"usd": 0.1}}],
+        )
+
+        update = await explain(state(objection("OBJ-1"), objection("OBJ-2")), rt)
+
+        explanation = update["explanation"]
+        assert explanation.summary == "Two problems, both fixed."
+        assert update["costs"] == {"explainer": Cost(usd=0.1)}
+        assert fakes(rt)[0].calls[0].model == Charter().models.explainer
+
+    async def test_an_explanation_that_skips_an_objection_is_retryable(
+        self, tmp_path: Path
+    ) -> None:
+        item = {"id": "OBJ-1", "title": "T", "problem": "P", "consequence": "C", "outcome": "O"}
+        output = {"summary": "One.", "items": [item]}
+        rt = runtime(tmp_path, agent=[{"schema": "Explanation", "output": output}])
+
+        with pytest.raises(RetryableCallError, match="missing: OBJ-2"):
+            await explain(state(objection("OBJ-1"), objection("OBJ-2")), rt)
+
+    async def test_nothing_raised_needs_no_explaining(self, tmp_path: Path) -> None:
+        rt = runtime(tmp_path)
+
+        assert await explain(state(), rt) == {}
+        assert fakes(rt)[0].calls == []

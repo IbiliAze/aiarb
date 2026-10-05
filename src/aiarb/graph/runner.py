@@ -2,12 +2,13 @@
 
 Every run is checkpointed as it goes, so it can pause for the user's decisions
 and carry on later, or be killed mid-round and carry on from its last finished
-step. The run ID is the LangGraph thread its checkpoints belong to.
+step. The run ID is the LangGraph thread its checkpoints belong to, and names
+the folder the run's files are written to when it finishes.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, cast
 
 from langgraph.types import Command, Durability
@@ -50,6 +51,7 @@ async def start(store: RunStore, context: RunContext, state: RunState) -> RunRes
     """Start a new run from `state`, and run it until it finishes or pauses."""
     name = state["feature"] or ("plan" if state["given_plans"] else None)
     run_id = store.create(name)
+    context = replace(context, run_dir=store.folder(run_id))
     async with store.checkpointer(run_id) as saver:
         graph = build_graph(checkpointer=saver)
         config = run_config(context.charter, run_id)
@@ -71,6 +73,7 @@ async def resume(
     """
     if not store.exists(run_id):
         raise RunNotFound(f"no run {run_id!r}")
+    context = replace(context, run_dir=store.folder(run_id))
     async with store.checkpointer(run_id) as saver:
         graph = build_graph(checkpointer=saver)
         config = run_config(context.charter, run_id)

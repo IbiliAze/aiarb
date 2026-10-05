@@ -97,10 +97,10 @@
 
 ## 11. Output
 
-- [ ] Write `plan.md`, with open items attached to the sections they affect
-- [ ] Write `ledger.md` in plain English: problem, consequence, resolution
-- [ ] Write `decisions.md` and `run.json`
-- [ ] Keep all file writing in the final node only
+- [x] Write `plan.md`, with open items attached to the sections they affect
+- [x] Write `ledger.md` in plain English: problem, consequence, resolution
+- [x] Write `decisions.md` and `run.json`
+- [x] Keep all file writing in the final node only
 
 ## 12. CLI
 

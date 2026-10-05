@@ -17,5 +17,10 @@ agent:
   - schema: Rulings
     output:
       rulings: [{id: OBJ-1, verdict: reject, note: The business has not said so.}]
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: Fairness against speed, problem: Small batches are fairer but slower., consequence: Either some users wait longer or the queue is less fair., outcome: "You decided."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.4}

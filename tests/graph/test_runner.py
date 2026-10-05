@@ -16,7 +16,14 @@ from aiarb.graph.state import initial_state
 from aiarb.ports.code_agent import AgentRequest, AgentResult, CodeAgent, OutputT
 from aiarb.ports.run_store import RunNotFound
 from aiarb.ports.scorer import Scorer
-from tests.fakes import AgentStep, Scenario, ScorerStep, ScriptedCodeAgent, ScriptedScorer
+from tests.fakes import (
+    AgentStep,
+    Scenario,
+    ScorerStep,
+    ScriptedCodeAgent,
+    ScriptedScorer,
+    explanation,
+)
 
 SCENARIOS = Path(__file__).parent.parent / "fixtures" / "scenarios"
 FEATURE = "Add a virtual waiting room."
@@ -50,8 +57,22 @@ def idle(repo: Path) -> RunContext:
     return context(repo, ScriptedCodeAgent([]), ScriptedScorer([]), max_rounds=1)
 
 
+def finishing(repo: Path) -> RunContext:
+    """A context for the rest of the decision scenario: once decided, the explainer."""
+    explainer = ScriptedCodeAgent([AgentStep.model_validate(explanation("OBJ-1"))])
+    return context(repo, explainer, ScriptedScorer([]), max_rounds=1)
+
+
+def until_paused(repo: Path) -> tuple[RunContext, Scenario]:
+    """The decision scenario up to its pause, before the explainer is called."""
+    data: dict[str, Any] = yaml.safe_load((SCENARIOS / "decision.yaml").read_text())
+    data["agent"] = [step for step in data["agent"] if step["schema"] != "Explanation"]
+    scenario = Scenario.from_data(data)
+    return context(repo, scenario.agent, scenario.scorer, max_rounds=1), scenario
+
+
 async def paused_run(tmp_path: Path, repo: Path) -> str:
-    ctx, scenario = scenario_context(repo, "decision", max_rounds=1)
+    ctx, scenario = until_paused(repo)
     result = await start(store(tmp_path), ctx, initial_state(feature=FEATURE))
     scenario.assert_finished()
     assert result.paused
@@ -62,7 +83,7 @@ class TestDecisions:
     async def test_run_to_the_interrupt_reload_from_disk_resume_and_finish(
         self, tmp_path: Path, repo: Path
     ) -> None:
-        ctx, scenario = scenario_context(repo, "decision", max_rounds=1)
+        ctx, scenario = until_paused(repo)
 
         paused = await start(store(tmp_path), ctx, initial_state(feature=FEATURE))
 
@@ -77,8 +98,13 @@ class TestDecisions:
         assert paused.state["ledger"]["OBJ-1"].status is Status.AWAITING_DECISION
         assert paused.state["status"] is None
 
+        assert not (tmp_path / "runs" / RUN_ID / "plan.md").exists()
+
         finished = await resume(
-            store(tmp_path), RUN_ID, idle(repo), {"OBJ-1": "  Fairness first: batches of 100. "}
+            store(tmp_path),
+            RUN_ID,
+            finishing(repo),
+            {"OBJ-1": "  Fairness first: batches of 100. "},
         )
 
         assert not finished.paused
@@ -88,7 +114,12 @@ class TestDecisions:
         assert item.history[-1].note == "Decided: Fairness first: batches of 100."
         assert finished.state["status"] is RunStatus.SETTLED
         assert finished.state["plan"] == paused.state["plan"]
-        assert finished.state["costs"] == paused.state["costs"]
+        assert finished.state["costs"].keys() - paused.state["costs"].keys() == {"explainer"}
+        folder = tmp_path / "runs" / RUN_ID
+        assert {"plan.md", "ledger.md", "decisions.md", "run.json"} <= {
+            path.name for path in folder.iterdir()
+        }
+        assert "Fairness first: batches of 100." in (folder / "decisions.md").read_text()
 
     async def test_resuming_without_answers_leaves_the_run_waiting(
         self, tmp_path: Path, repo: Path
@@ -120,7 +151,7 @@ class TestDecisions:
         assert refused.request["problem"] == problem
         assert refused.state["ledger"]["OBJ-1"].status is Status.AWAITING_DECISION
 
-        accepted = await resume(store(tmp_path), run_id, idle(repo), {"OBJ-1": "Fair."})
+        accepted = await resume(store(tmp_path), run_id, finishing(repo), {"OBJ-1": "Fair."})
 
         assert accepted.state["status"] is RunStatus.SETTLED
 
@@ -137,21 +168,21 @@ class TestDecisions:
         for wrong in ({"OBJ-9": "Fast."}, {"OBJ-1": " "}):
             assert (await resume(store(tmp_path), run_id, idle(repo), wrong)).paused
 
-        finished = await resume(store(tmp_path), run_id, idle(repo), {"OBJ-1": "Fair."})
+        finished = await resume(store(tmp_path), run_id, finishing(repo), {"OBJ-1": "Fair."})
 
         assert finished.state["ledger"]["OBJ-1"].history[-1].note == "Decided: Fair."
         assert finished.state["status"] is RunStatus.SETTLED
 
     async def test_answers_for_a_finished_run_are_refused(self, tmp_path: Path, repo: Path) -> None:
         run_id = await paused_run(tmp_path, repo)
-        await resume(store(tmp_path), run_id, idle(repo), {"OBJ-1": "Fair."})
+        await resume(store(tmp_path), run_id, finishing(repo), {"OBJ-1": "Fair."})
 
         with pytest.raises(NotWaiting):
             await resume(store(tmp_path), run_id, idle(repo), {"OBJ-1": "Fast."})
 
     async def test_a_finished_run_resumes_as_it_was(self, tmp_path: Path, repo: Path) -> None:
         run_id = await paused_run(tmp_path, repo)
-        finished = await resume(store(tmp_path), run_id, idle(repo), {"OBJ-1": "Fair."})
+        finished = await resume(store(tmp_path), run_id, finishing(repo), {"OBJ-1": "Fair."})
 
         again = await resume(store(tmp_path), run_id, idle(repo))
 
@@ -188,7 +219,7 @@ async def test_a_run_killed_mid_round_resumes_from_its_last_checkpoint(
     data: dict[str, Any] = yaml.safe_load((SCENARIOS / "round_limit.yaml").read_text())
     agent_steps = [AgentStep.model_validate(step) for step in data["agent"]]
     scorer_steps = [ScorerStep.model_validate(step) for step in data["scorer"]]
-    before_kill = ScriptedCodeAgent(agent_steps[:-1])
+    before_kill = ScriptedCodeAgent(agent_steps[:-2])
     hanging = HangsOnSecondRuling(before_kill)
     first = context(repo, hanging, ScriptedScorer(scorer_steps[:2]), max_rounds=2)
 
@@ -199,7 +230,7 @@ async def test_a_run_killed_mid_round_resumes_from_its_last_checkpoint(
         await task
 
     before_kill.assert_finished()
-    after_kill = ScriptedCodeAgent(agent_steps[-1:], sessions=["session-1", "session-2"])
+    after_kill = ScriptedCodeAgent(agent_steps[-2:], sessions=["session-1", "session-2"])
     rescorer = ScriptedScorer(scorer_steps[2:])
     second = context(repo, after_kill, rescorer, max_rounds=2)
 
@@ -207,7 +238,7 @@ async def test_a_run_killed_mid_round_resumes_from_its_last_checkpoint(
 
     after_kill.assert_finished()
     rescorer.assert_finished()
-    assert [call.schema.__name__ for call in after_kill.calls] == ["Rulings"]
+    assert [call.schema.__name__ for call in after_kill.calls] == ["Rulings", "Explanation"]
     assert after_kill.calls[0].session_id == "session-2"
     assert result.state["round"] == 2
     assert result.state["ledger"]["OBJ-1"].status is Status.DEFERRED

@@ -2,6 +2,7 @@
 
     .aiarb/runs/2026-10-05-add-a-virtual-waiting-room/
         checkpoints.sqlite
+        plan.md, ledger.md, decisions.md, run.json   (once the run finishes)
 
 Each checkpoint is written as the step that made it finishes, so a run that is
 killed carries on from its last finished step.
@@ -58,7 +59,10 @@ class SqliteRunStore:
         raise RuntimeError(f"too many runs named {base} in {self.root}")
 
     def exists(self, run_id: str) -> bool:
-        return (self.root / check_run_id(run_id)).is_dir()
+        return self.folder(run_id).is_dir()
+
+    def folder(self, run_id: str) -> Path:
+        return self.root / check_run_id(run_id)
 
     @asynccontextmanager
     async def checkpointer(self, run_id: str) -> AsyncIterator[AsyncSqliteSaver]:

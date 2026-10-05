@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 if TYPE_CHECKING:
     from contextlib import AbstractAsyncContextManager
+    from pathlib import Path
 
     from langgraph.checkpoint.base import BaseCheckpointSaver
 
@@ -35,6 +36,10 @@ class RunStore(Protocol):
         ...
 
     def exists(self, run_id: str) -> bool: ...
+
+    def folder(self, run_id: str) -> Path:
+        """Where the run's files are written."""
+        ...
 
     def checkpointer(self, run_id: str) -> AbstractAsyncContextManager[BaseCheckpointSaver[Any]]:
         """The run's checkpoint saver, open for as long as the context lasts.

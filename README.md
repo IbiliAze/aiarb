@@ -155,9 +155,9 @@ Each run writes to `.aiarb/runs/<date>-<name>/`:
 
 | File           | Contents                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------- |
-| `plan.md`      | The settled plan, with any open items attached to the sections they affect                |
-| `ledger.md`    | Every objection: the problem, what would have happened in production, how it was resolved |
-| `decisions.md` | The trade-offs you ruled on, and why                                                      |
+| `plan.md`      | The settled plan. Above it, what to settle before building and the rulings and decisions to apply; each is also noted under the plan sections it affects |
+| `ledger.md`    | Every objection in plain English: the problem, what would have happened in production, how it ended, and the full debate |
+| `decisions.md` | The trade-offs you decided, with each side's last word                                    |
 | `run.json`     | The full machine-readable record                                                          |
 
 ## Run status and exit codes
@@ -170,7 +170,7 @@ Each run writes to `.aiarb/runs/<date>-<name>/`:
 
 A run never forces agreement. If the round limit is reached, each leftover item is handled by type:
 
-- **Unverifiable facts** become a task at the top of the plan, such as a load test to run first.
+- **Unverifiable facts** become a task under *Before you build* at the top of the plan, such as a load test to run first.
 - **Trade-offs** come to you as a decision.
 - **Circular arguments** go to the judge and are marked "ruled, not agreed".
 

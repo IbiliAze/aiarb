@@ -29,6 +29,12 @@ agent:
           note: Redis survives deploys.
           resolution: {kind: plan_change, sections: [{kind: plan, section: Queue}]}
     cost: {usd: 0.25}
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: The queue is lost on every deploy, problem: Queue places were kept in memory., consequence: Every deploy would drop everyone's place., outcome: "Fixed: places are now stored in the database."}
+        - {id: OBJ-2, title: An unexplained constant, problem: The queue size has no comment., consequence: A future change could get it wrong., outcome: "Passed to the planner as a note."}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6, cost: {usd: 0.01}}
   - {call: score, contains: OBJ-2, value: 0.1, cost: {usd: 0.01}}

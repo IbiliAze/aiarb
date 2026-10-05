@@ -3,6 +3,7 @@
 from aiarb.graph.nodes.critique import critique
 from aiarb.graph.nodes.decide import decide
 from aiarb.graph.nodes.draft_plan import draft_plan
+from aiarb.graph.nodes.explain import explain
 from aiarb.graph.nodes.finalise import finalise
 from aiarb.graph.nodes.judge import judge
 from aiarb.graph.nodes.rescore import rescore
@@ -16,6 +17,7 @@ __all__ = [
     "critique",
     "decide",
     "draft_plan",
+    "explain",
     "finalise",
     "judge",
     "rescore",
