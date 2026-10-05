@@ -52,8 +52,7 @@ The planner and critic each run inside [Claude Code](https://docs.claude.com/en/
 ## Requirements
 
 - Python 3.11 or later
-- Claude Code installed and on your `PATH`
-- An Anthropic API key
+- Claude Code, signed in, or an Anthropic API key. aiarb uses the copy of Claude Code that comes with the Claude Agent SDK, or the `claude` on your `PATH` where the SDK has none
 - Optional: a TypeSafe API key, to use Jev for objection scoring
 
 ## Install
@@ -173,7 +172,7 @@ After you have new evidence or have made a decision, `aiarb resume` reopens only
 
 ## Safety
 
-- Agents get read and search tools only. Nothing in your repo is modified outside `.aiarb/`.
+- Agents get read and search tools only, and cannot read outside your repo. Nothing in your repo is modified outside `.aiarb/`.
 - Every agent call carries a spend cap, and the run has a total budget.
 - Secrets are redacted from logs and outputs.
 
@@ -201,6 +200,12 @@ uv run pytest
 ```
 
 The full graph runs in tests on fake adapters, so the test suite makes no API calls.
+
+The Claude Code adapter also has live tests, which run real Claude Code on Haiku and cost a few cents:
+
+```bash
+AIARB_LIVE_TESTS=1 uv run pytest tests/live
+```
 
 To see the graph in [LangGraph Studio](https://docs.langchain.com/langgraph-platform/langgraph-studio), run `uv run langgraph dev`.
 

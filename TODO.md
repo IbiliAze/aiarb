@@ -69,13 +69,13 @@
 
 ## 8. Claude Code adapter
 
-- [ ] Implement `CodeAgent` with the Agent SDK
-- [ ] Restrict tools to read and search only, and test that a write attempt is refused
-- [ ] Pass the JSON schema for structured output and validate the result
-- [ ] Store and reuse session IDs so later rounds resume
-- [ ] Apply the per-call spend cap and capture cost and token usage
-- [ ] Map SDK errors to retryable and fatal
-- [ ] Handle a missing Claude Code install with a clear message
+- [x] Implement `CodeAgent` with the Agent SDK
+- [x] Restrict tools to read and search only, and test that a write attempt is refused
+- [x] Pass the JSON schema for structured output and validate the result
+- [x] Store and reuse session IDs so later rounds resume
+- [x] Apply the per-call spend cap and capture cost and token usage
+- [x] Map SDK errors to retryable and fatal
+- [x] Handle a missing Claude Code install with a clear message
 
 ## 9. Prompts and schemas
 
