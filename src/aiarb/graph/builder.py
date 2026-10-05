@@ -5,9 +5,13 @@
     respond  → rule
     rule     → verify if facts are disputed, otherwise on as after verify
     verify   → respond for another round, judge at the round limit or on a
-               stalemate, or rescore once nothing is open
+               stalemate, or once nothing is open, decide if trade-offs are
+               waiting for the user, otherwise rescore
     judge    → decide if trade-offs are left for the user, otherwise rescore
     decide   → rescore → explain → finalise
+
+A finished or paused run whose items the user reopens carries on from triage,
+as if triage had just sent those items to debate.
 
 Agent nodes retry calls that are worth retrying, and each attempt has a time
 limit. The routers in `routing.py` decide every branch. Only `finalise` writes
@@ -33,8 +37,6 @@ if TYPE_CHECKING:
     from langchain_core.runnables import RunnableConfig
     from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
-
-    from aiarb.config.charter import Charter
 
 AGENT_RETRY = RetryPolicy(
     initial_interval=5.0,
@@ -136,10 +138,10 @@ def recursion_limit(max_rounds: int) -> int:
     return _INPUT_STEP + _FIXED_STEPS + _STEPS_PER_ROUND * max_rounds
 
 
-def run_config(charter: Charter, run_id: str) -> RunnableConfig:
+def run_config(run_id: str, max_rounds: int) -> RunnableConfig:
     """The config to invoke the graph with: the run is the thread its checkpoints
-    belong to, and its step limit comes from the charter."""
+    belong to, and its step limit comes from its round limit."""
     return {
-        "recursion_limit": recursion_limit(charter.debate.max_rounds),
+        "recursion_limit": recursion_limit(max_rounds),
         "configurable": {"thread_id": run_id},
     }

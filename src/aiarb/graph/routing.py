@@ -12,6 +12,7 @@ from typing import Literal
 
 from langgraph.runtime import Runtime
 
+from aiarb.config.charter import Charter
 from aiarb.domain.ledger import Status
 from aiarb.graph.context import RunContext
 from aiarb.graph.state import RunState
@@ -23,8 +24,8 @@ _IN_DEBATE = frozenset({Status.OPEN, Status.ANSWERED, Status.DISPUTED})
 """Statuses the planner, critic and verifier are still arguing over."""
 
 AfterTriage = Literal["respond", "rescore"]
-AfterRule = Literal["verify", "respond", "judge", "rescore"]
-AfterRound = Literal["respond", "judge", "rescore"]
+AfterRule = Literal["verify", "respond", "judge", "decide", "rescore"]
+AfterRound = Literal["respond", "judge", "decide", "rescore"]
 AfterJudge = Literal["decide", "rescore"]
 
 
@@ -41,10 +42,14 @@ def after_rule(state: RunState, runtime: Runtime[RunContext]) -> AfterRule:
 
 
 def after_round(state: RunState, runtime: Runtime[RunContext]) -> AfterRound:
-    """Go another round, hand the leftovers to the judge, or finish the debate."""
+    """Go another round, hand the leftovers to the judge, or finish the debate.
+
+    Trade-offs can be waiting for the user once the debate ends without the
+    judge: after the user reopened other items instead of deciding them.
+    """
     if not _any_open(state):
-        return "rescore"
-    if judge_needed(state, runtime.context.charter.debate.max_rounds):
+        return "decide" if decisions_needed(state) else "rescore"
+    if judge_needed(state, round_limit(state, runtime.context.charter)):
         return "judge"
     return "respond"
 
@@ -59,8 +64,15 @@ def judge_needed(state: RunState, max_rounds: int) -> bool:
     return round_limit_reached(state, max_rounds) or stalled(state)
 
 
+def round_limit(state: RunState, charter: Charter) -> int:
+    """The run's round limit: the one it was given, or the charter's."""
+    return state["max_rounds"] or charter.debate.max_rounds
+
+
 def round_limit_reached(state: RunState, max_rounds: int) -> bool:
-    return state["round"] >= max_rounds
+    """The current debate has had its rounds. A debate the user reopened gets a
+    full set of its own."""
+    return state["round"] - state["debate_start"] >= max_rounds
 
 
 def stalled(state: RunState) -> bool:
@@ -68,9 +80,10 @@ def stalled(state: RunState) -> bool:
 
     Leaving means being resolved, deferred, sent for a decision, or anything else
     that ends the argument over it. A rejected answer does not count, even if the
-    plan changed, since the critic was not persuaded.
+    plan changed, since the critic was not persuaded. The user reopening items
+    restarts the clock.
     """
-    return state["round"] - last_progress(state) >= STALL_ROUNDS
+    return state["round"] - max(last_progress(state), state["debate_start"]) >= STALL_ROUNDS
 
 
 def last_progress(state: RunState) -> int:

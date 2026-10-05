@@ -79,6 +79,11 @@ class RunState(TypedDict):
     """The current plan, in Markdown. Empty until drafted."""
     round: int
     """0 for the opening; the planner's response starts each later round."""
+    max_rounds: int | None
+    """The round limit given for this run. None uses the charter's."""
+    debate_start: int
+    """The round the current debate started from: 0, or the round at which the
+    user last reopened items. The round limit counts from here."""
     ledger: Annotated[dict[str, Objection], merge_ledger]
     costs: Annotated[dict[Role, Cost], add_costs]
     sessions: Annotated[dict[Role, str], merge_sessions]
@@ -94,21 +99,29 @@ class StateUpdate(TypedDict, total=False):
     facts: str
     plan: str
     round: int
+    max_rounds: int | None
+    debate_start: int
     ledger: dict[str, Objection]
     costs: dict[Role, Cost]
     sessions: dict[Role, str]
     explanation: Explanation
-    status: RunStatus
+    status: RunStatus | None
 
 
-def initial_state(*, feature: str | None = None, given_plans: Sequence[str] = ()) -> RunState:
+def initial_state(
+    *, feature: str | None = None, given_plans: Sequence[str] = (), max_rounds: int | None = None
+) -> RunState:
     """The state a new run starts from."""
+    if max_rounds is not None and max_rounds < 1:
+        raise ValueError(f"a run needs at least one round, got {max_rounds}")
     return RunState(
         feature=feature,
         given_plans=list(given_plans),
         facts="",
         plan="",
         round=0,
+        max_rounds=max_rounds,
+        debate_start=0,
         ledger={},
         costs={},
         sessions={},

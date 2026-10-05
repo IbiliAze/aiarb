@@ -104,12 +104,12 @@
 
 ## 12. CLI
 
-- [ ] `aiarb init`: write a starter charter
-- [ ] `aiarb plan`: with `--feature`, repeatable `--plan`, `--max-rounds`, all optional
-- [ ] `aiarb resume`: continue a run, accepting decisions or new evidence
-- [ ] Interactive mode when run with no arguments
-- [ ] Live progress: current step, round, open items, running cost
-- [ ] Exit codes 0, 1, 2, with JSON on stdout and the summary on stderr
+- [x] `aiarb init`: write a starter charter
+- [x] `aiarb plan`: with `--feature`, repeatable `--plan`, `--max-rounds`, all optional
+- [x] `aiarb resume`: continue a run, accepting decisions or new evidence
+- [x] Interactive mode when run with no arguments
+- [x] Live progress: current step, round, open items, running cost
+- [x] Exit codes 0, 1, 2, with JSON on stdout and the summary on stderr
 
 ## 13. Observability and safety
 

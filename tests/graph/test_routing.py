@@ -43,10 +43,18 @@ def runtime(repo: Path, max_rounds: int = 4) -> Runtime[RunContext]:
     )
 
 
-def state(*items: Objection, round: int = 0) -> RunState:
-    base = initial_state(feature="Add a virtual waiting room.")
-    base.update({"ledger": {item.id: item for item in items}, "round": round})
+def state(
+    *items: Objection, round: int = 0, max_rounds: int | None = None, debate_start: int = 0
+) -> RunState:
+    base = initial_state(feature="Add a virtual waiting room.", max_rounds=max_rounds)
+    base.update(
+        {"ledger": {item.id: item for item in items}, "round": round, "debate_start": debate_start}
+    )
     return base
+
+
+def reopened(item: Objection, round: int) -> Objection:
+    return item.transition(Status.OPEN, actor=Actor.HUMAN, round=round, note="New evidence.")
 
 
 def raised(id: str, type: ObjectionType = ObjectionType.DESIGN) -> Objection:
@@ -169,6 +177,31 @@ class TestAfterRound:
 
         assert after_round(state(item, round=2), runtime(tmp_path, max_rounds=4)) == "judge"
 
+    def test_the_runs_own_round_limit_overrides_the_charters(self, tmp_path: Path) -> None:
+        item = rejected(raised("OBJ-1"), 1)
+
+        ledger = state(item, round=1, max_rounds=1)
+
+        assert after_round(ledger, runtime(tmp_path, max_rounds=4)) == "judge"
+
+    def test_a_reopened_debate_gets_rounds_of_its_own(self, tmp_path: Path) -> None:
+        item = rejected(reopened(accepted(raised("OBJ-1"), 1), 2), 3)
+
+        limit = runtime(tmp_path, max_rounds=2)
+
+        assert after_round(state(item, round=3, debate_start=2), limit) == "respond"
+        assert after_round(state(rejected(item, 4), round=4, debate_start=2), limit) == "judge"
+
+    def test_trade_offs_left_waiting_go_to_the_user_once_the_debate_ends(
+        self, tmp_path: Path
+    ) -> None:
+        trade_off = awaiting_decision(raised("OBJ-1", ObjectionType.TRADE_OFF), 2)
+        settled = accepted(reopened(accepted(raised("OBJ-2"), 1), 2), 3)
+
+        ledger = state(trade_off, settled, round=3, debate_start=2)
+
+        assert after_round(ledger, runtime(tmp_path)) == "decide"
+
 
 class TestStalled:
     def test_one_quiet_round_is_not_a_stall(self) -> None:
@@ -208,6 +241,12 @@ class TestStalled:
 
         assert last_progress(state(item, round=2)) == expected
 
+    def test_reopening_items_restarts_the_clock(self) -> None:
+        item = rejected(reopened(accepted(raised("OBJ-1"), 1), 4), 5)
+
+        assert not stalled(state(item, round=5, debate_start=4))
+        assert stalled(state(rejected(item, 6), round=6, debate_start=4))
+
     def test_triage_notes_do_not_count_as_debate_progress(self) -> None:
         ledger = state(noted(raised("OBJ-1")), rejected(rejected(raised("OBJ-2"), 1), 2), round=2)
 
@@ -230,8 +269,8 @@ class TestAfterJudge:
     ("router", "targets"),
     [
         (after_triage, {"respond", "rescore"}),
-        (after_rule, {"verify", "respond", "judge", "rescore"}),
-        (after_round, {"respond", "judge", "rescore"}),
+        (after_rule, {"verify", "respond", "judge", "decide", "rescore"}),
+        (after_round, {"respond", "judge", "decide", "rescore"}),
         (after_judge, {"decide", "rescore"}),
     ],
 )

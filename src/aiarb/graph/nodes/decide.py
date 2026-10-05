@@ -53,17 +53,15 @@ def decide(state: RunState) -> StateUpdate:
         if problem is None:
             break
         request = {**request, "problem": problem}
-    return {
-        "ledger": {
-            item.id: item.transition(
-                Status.DECIDED,
-                actor=Actor.HUMAN,
-                round=state["round"],
-                note=f"Decided: {answers[item.id].strip()}",
-            )
-            for item in waiting
-        }
-    }
+    round = state["round"]
+    return {"ledger": {item.id: decided(item, answers[item.id], round) for item in waiting}}
+
+
+def decided(item: Objection, answer: str, round: int) -> Objection:
+    """The trade-off, decided by the user."""
+    return item.transition(
+        Status.DECIDED, actor=Actor.HUMAN, round=round, note=f"Decided: {answer.strip()}"
+    )
 
 
 def _question(item: Objection) -> Question:

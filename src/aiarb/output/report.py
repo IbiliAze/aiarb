@@ -33,9 +33,13 @@ class Report:
     outcome: Outcome
     costs: Mapping[Role, Cost]
     charter: Charter
+    """The charter as the run used it, with any round limit the run was given."""
 
     @classmethod
     def of(cls, state: RunState, charter: Charter, run_id: str | None) -> Report:
+        if state["max_rounds"] is not None:
+            debate = charter.debate.model_copy(update={"max_rounds": state["max_rounds"]})
+            charter = charter.model_copy(update={"debate": debate})
         return cls(
             run_id=run_id,
             feature=state["feature"],

@@ -6,8 +6,10 @@ from pathlib import Path
 import pytest
 
 from aiarb import output
+from aiarb.config.charter import Charter
 from aiarb.domain.ledger import PlanRef
 from aiarb.domain.scoring import Severity
+from aiarb.graph.state import initial_state
 from aiarb.output import decisions, ledger, record
 from tests.output.examples import (
     DECIDED,
@@ -137,6 +139,13 @@ class TestRecord:
                 "refs": [{"kind": "plan", "section": "Queue storage", "quote": None}],
             },
         }
+
+    def test_records_the_round_limit_the_run_was_given(self) -> None:
+        state = initial_state(feature="Add a virtual waiting room.", max_rounds=2)
+
+        data = json.loads(record.render(output.Report.of(state, Charter(), run_id="run")))
+
+        assert data["charter"]["debate"] == {"max_rounds": 2}
 
     def test_without_an_explanation_has_none(self) -> None:
         data = json.loads(record.render(report(NOTED, explained=False)))

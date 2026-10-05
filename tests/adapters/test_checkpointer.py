@@ -1,9 +1,10 @@
+import os
 from datetime import date
 from pathlib import Path
 
 import pytest
 
-from aiarb.adapters.checkpointer import SqliteRunStore
+from aiarb.adapters.checkpointer import CHECKPOINTS, SqliteRunStore
 from aiarb.ports.run_store import RunNotFound
 
 
@@ -60,3 +61,32 @@ async def test_a_run_that_was_never_created_has_no_checkpointer(tmp_path: Path) 
     with pytest.raises(RunNotFound):
         async with store(tmp_path).checkpointer("2026-10-05-missing"):
             pass
+
+
+class TestRuns:
+    def test_lists_the_most_recently_active_run_first(self, tmp_path: Path) -> None:
+        runs = store(tmp_path)
+        older, newer = runs.create("Add a queue"), runs.create("Add a cache")
+        touch(tmp_path / older, 100)
+        touch(tmp_path / newer, 200)
+        assert runs.runs() == [newer, older]
+
+        touch(tmp_path / older / CHECKPOINTS, 300)
+
+        assert runs.runs() == [older, newer]
+
+    def test_skips_what_is_not_a_run(self, tmp_path: Path) -> None:
+        runs = store(tmp_path)
+        run_id = runs.create("Add a queue")
+        (tmp_path / "Notes").mkdir()
+        (tmp_path / "stray.txt").write_text("")
+
+        assert runs.runs() == [run_id]
+
+    def test_no_runs_yet(self, tmp_path: Path) -> None:
+        assert store(tmp_path / "missing").runs() == []
+
+
+def touch(path: Path, mtime: float) -> None:
+    path.touch()
+    os.utime(path, (mtime, mtime))

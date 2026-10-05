@@ -56,7 +56,7 @@ async def run(
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()), retry_policy=retry_policy
     )
-    config = config or run_config(rules, "test-run")
+    config = config or run_config("test-run", max_rounds)
     await graph.ainvoke(
         initial_state(feature="Add a virtual waiting room."), config, context=context
     )
@@ -260,20 +260,20 @@ class TestRecursionLimit:
         assert statuses(final) == {"OBJ-1": outcome, "OBJ-2": Status.RESOLVED}
 
     async def test_the_limit_is_exact(self, tmp_path: Path) -> None:
-        config = run_config(charter(max_rounds=3), "test-run")
+        config = run_config("test-run", 3)
         config["recursion_limit"] = recursion_limit(3) - 1
 
         with pytest.raises(GraphRecursionError):
             await run(tmp_path, worst_case(3, "design"), max_rounds=3, config=config)
 
-    def test_the_limit_comes_from_the_charters_max_rounds(self) -> None:
-        config = run_config(charter(max_rounds=6), "2026-10-05-queue")
+    def test_the_limit_comes_from_the_round_limit(self) -> None:
+        config = run_config("2026-10-05-queue", 6)
 
         assert config["recursion_limit"] == recursion_limit(6)
         assert recursion_limit(6) - recursion_limit(5) == 3
 
     def test_the_run_id_is_the_thread_id(self) -> None:
-        config = run_config(charter(), "2026-10-05-queue")
+        config = run_config("2026-10-05-queue", 4)
 
         assert config["configurable"] == {"thread_id": "2026-10-05-queue"}
 

@@ -37,6 +37,10 @@ class RunStore(Protocol):
 
     def exists(self, run_id: str) -> bool: ...
 
+    def runs(self) -> list[str]:
+        """Every run's ID, the most recently active first."""
+        ...
+
     def folder(self, run_id: str) -> Path:
         """Where the run's files are written."""
         ...

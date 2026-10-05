@@ -20,7 +20,7 @@ import aiosqlite
 from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
 from aiarb.graph.state import checkpoint_serializer
-from aiarb.ports.run_store import RunNotFound, check_run_id
+from aiarb.ports.run_store import RUN_ID, RunNotFound, check_run_id
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Callable
@@ -61,6 +61,15 @@ class SqliteRunStore:
     def exists(self, run_id: str) -> bool:
         return self.folder(run_id).is_dir()
 
+    def runs(self) -> list[str]:
+        """Every run's ID, the run whose checkpoints changed last first."""
+        if not self.root.is_dir():
+            return []
+        folders = [
+            path for path in self.root.iterdir() if RUN_ID.match(path.name) and path.is_dir()
+        ]
+        return [path.name for path in sorted(folders, key=_last_active, reverse=True)]
+
     def folder(self, run_id: str) -> Path:
         return self.root / check_run_id(run_id)
 
@@ -70,6 +79,14 @@ class SqliteRunStore:
             raise RunNotFound(f"no run {run_id!r} in {self.root}")
         async with aiosqlite.connect(self.root / run_id / CHECKPOINTS) as connection:
             yield AsyncSqliteSaver(connection, serde=checkpoint_serializer())
+
+
+def _last_active(folder: Path) -> tuple[float, str]:
+    """When the run's checkpoints last changed, or its folder was made. The name
+    breaks ties, so the order is stable."""
+    checkpoints = folder / CHECKPOINTS
+    path = checkpoints if checkpoints.exists() else folder
+    return path.stat().st_mtime, folder.name
 
 
 def _slug(name: str | None) -> str:

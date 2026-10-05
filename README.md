@@ -85,14 +85,30 @@ aiarb plan --plan ./waiting-room-plan.md
 
 Run `aiarb` with no arguments for a guided, interactive session. Every option can be left empty; aiarb infers what it can from the repo and states its assumptions.
 
+While a run goes, aiarb shows each step, the round, how many objections are open and what the run has spent. If the run needs your decisions, it asks for them there and then. Without a terminal, or with `--no-input`, it stops and prints the questions and the command to answer them:
+
+```bash
+aiarb resume 2026-10-05-add-a-virtual-waiting-room --decide OBJ-4="Fairness first: batches of 100"
+```
+
+Got new evidence after a run, such as load-test results? Reopen the items it bears on, and they are debated again with a full set of rounds:
+
+```bash
+aiarb resume --evidence OBJ-1=@load-test-results.md
+```
+
+`ID=@file` reads a decision or evidence from a file. Without a run ID, `aiarb resume` takes the most recently active run. A run that stopped part way, from a failed call or Ctrl-C, carries on from its last finished step.
+
 ## Commands
 
 | Command        | What it does                                                              |
 | -------------- | ------------------------------------------------------------------------- |
 | `aiarb`        | Interactive mode                                                          |
-| `aiarb init`   | Write a starter charter to `.aiarb/charter.yaml`                          |
-| `aiarb plan`   | Start a run. Options: `--feature`, `--plan` (repeatable), `--max-rounds`  |
-| `aiarb resume` | Continue a paused or interrupted run, with your decisions or new evidence |
+| `aiarb init`   | Write a starter charter to `.aiarb/charter.yaml`, and keep runs out of git |
+| `aiarb plan`   | Start a run. Options: `--feature`, `--plan` (repeatable), `--max-rounds`, `--no-input` |
+| `aiarb resume` | Continue a paused or stopped run. Options: `--decide ID=...` and `--evidence ID=...` (both repeatable), `--max-rounds` for a reopened debate, `--no-input` |
+
+`plan` and `resume` print JSON describing the run to standard output, and everything meant for people to standard error, so scripts can read the result and the exit code.
 
 ## The charter
 
@@ -151,7 +167,7 @@ The scorer uses [Jev](https://typesafe.ai) when configured, with a language mode
 
 ## What you get
 
-Each run writes to `.aiarb/runs/<date>-<name>/`:
+Each run writes to `.aiarb/runs/<date>-<name>/`, which `.aiarb/.gitignore` keeps out of git:
 
 | File           | Contents                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------- |
@@ -167,6 +183,10 @@ Each run writes to `.aiarb/runs/<date>-<name>/`:
 | Settled                 | No open objections                                               | `0`       |
 | Settled with open items | The plan is usable; unresolved items are listed as known risks   | `1`       |
 | Not ready               | At least one open item is a blocker. Do not build from this plan | `2`       |
+| Waiting for decisions   | The run has paused for your decisions; `aiarb resume` takes them | `3`       |
+| Stopped                 | aiarb could not run as asked, or the run stopped part way; a stopped run can be resumed | `4` |
+
+Ctrl-C exits with `130`, and the run can be resumed.
 
 A run never forces agreement. If the round limit is reached, each leftover item is handled by type:
 
