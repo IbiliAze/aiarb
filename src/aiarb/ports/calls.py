@@ -42,3 +42,12 @@ class RetryableCallError(CallError):
 
 class FatalCallError(CallError):
     """Trying again will not help: bad credentials, a missing install, or a spend cap."""
+
+
+class SpendCapReached(FatalCallError):
+    """The call stopped at the most it was allowed to spend."""
+
+    def __init__(self, message: str, *, cost: Cost | None = None, by_request: bool) -> None:
+        super().__init__(message, cost=cost)
+        self.by_request = by_request
+        """Whether the cap was the request's own, rather than the agent's per-call cap."""

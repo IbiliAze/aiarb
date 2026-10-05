@@ -113,10 +113,10 @@
 
 ## 13. Observability and safety
 
-- [ ] Structured logs per run, written to the run folder
-- [ ] A total budget cap that stops the run cleanly and leaves it resumable
-- [ ] Redact secrets from logs and outputs
-- [ ] Confirm nothing in the target repo is modified, apart from `.aiarb/`
+- [x] Structured logs per run, written to the run folder
+- [x] A total budget cap that stops the run cleanly and leaves it resumable
+- [x] Redact secrets from logs and outputs
+- [x] Confirm nothing in the target repo is modified, apart from `.aiarb/`
 
 ## 14. Real-world proof
 

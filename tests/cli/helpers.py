@@ -17,6 +17,7 @@ from aiarb.cli import setup as cli_setup
 from aiarb.cli.app import app
 from aiarb.cli.setup import Ports, Setup
 from aiarb.config.charter import Charter
+from aiarb.observe.redact import Redactor
 from tests.fakes import Scenario, ScriptedCodeAgent, ScriptedScorer
 
 SCENARIOS = Path(__file__).parent.parent / "fixtures" / "scenarios"
@@ -65,9 +66,11 @@ def aiarb(
     can_ask: bool = False,
     input: str | None = None,
     real_ports: bool = False,
+    redactor: Redactor | None = None,
 ) -> Outcome:
     """Run `aiarb` on `repo`, with `ports` scripted, or the real ones if
-    `real_ports`. The clock moves a minute each time it is read."""
+    `real_ports`. The clock moves a minute each time it is read. Only secrets
+    known by their shape are redacted, unless `redactor` knows more."""
     ports = ports or nothing()
     ticks = itertools.count(0, 60)
     built: list[Charter] = []
@@ -82,6 +85,7 @@ def aiarb(
         can_ask=lambda: can_ask,
         console=Console(stderr=True, width=200, color_system=None, highlight=False),
         clock=lambda: float(next(ticks)),
+        redactor=redactor or Redactor(),
     )
     command = [*args]
     if args and args[0] in {"init", "plan", "resume"}:

@@ -5,7 +5,9 @@
     decisions.md   the trade-offs the user decided
     run.json       the whole run as data
 
-Rendering is pure. Only the graph's final node writes, through `write`.
+Rendering is pure. Only the graph's final node writes, through `write`. Every
+file is redacted as it is rendered: secrets an agent quoted from the repo are
+taken out.
 """
 
 from __future__ import annotations
@@ -13,6 +15,7 @@ from __future__ import annotations
 import os
 from typing import TYPE_CHECKING
 
+from aiarb.observe.redact import Redactor
 from aiarb.output import decisions, ledger, plan, record
 from aiarb.output.report import Report
 
@@ -25,13 +28,15 @@ __all__ = ["FILES", "Report", "render", "write"]
 FILES = ("plan.md", "ledger.md", "decisions.md", "run.json")
 
 
-def render(report: Report) -> dict[str, str]:
-    """Each file's name and text."""
+def render(report: Report, *, redactor: Redactor | None = None) -> dict[str, str]:
+    """Each file's name and text, redacted. By default, only secrets recognisable
+    by their shape are taken out; a run's redactor also knows its environment's."""
+    redactor = redactor or Redactor()
     return {
-        "plan.md": plan.render(report),
-        "ledger.md": ledger.render(report),
-        "decisions.md": decisions.render(report),
-        "run.json": record.render(report),
+        "plan.md": redactor.text(plan.render(report)),
+        "ledger.md": redactor.text(ledger.render(report)),
+        "decisions.md": redactor.text(decisions.render(report)),
+        "run.json": record.render(report, redactor),
     }
 
 

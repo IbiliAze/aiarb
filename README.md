@@ -175,6 +175,7 @@ Each run writes to `.aiarb/runs/<date>-<name>/`, which `.aiarb/.gitignore` keeps
 | `ledger.md`    | Every objection in plain English: the problem, what would have happened in production, how it ended, and the full debate |
 | `decisions.md` | The trade-offs you decided, with each side's last word                                    |
 | `run.json`     | The full machine-readable record                                                          |
+| `log.jsonl`    | One JSON object per line for each step and outside call: when, how long, on what model, what it spent, and how it failed if it did |
 
 ## Run status and exit codes
 
@@ -185,6 +186,7 @@ Each run writes to `.aiarb/runs/<date>-<name>/`, which `.aiarb/.gitignore` keeps
 | Not ready               | At least one open item is a blocker. Do not build from this plan | `2`       |
 | Waiting for decisions   | The run has paused for your decisions; `aiarb resume` takes them | `3`       |
 | Stopped                 | aiarb could not run as asked, or the run stopped part way; a stopped run can be resumed | `4` |
+| Over budget             | The run spent `budget.per_run`; raise it, then `aiarb resume`    | `5`       |
 
 Ctrl-C exits with `130`, and the run can be resumed.
 
@@ -198,9 +200,9 @@ After you have new evidence or have made a decision, `aiarb resume` reopens only
 
 ## Safety
 
-- Agents get read and search tools only, and cannot read outside your repo. Nothing in your repo is modified outside `.aiarb/`.
-- Every agent call carries a spend cap, and the run has a total budget.
-- Secrets are redacted from logs and outputs.
+- Agents get read and search tools only, and cannot read outside your repo. Nothing in your repo is modified outside `.aiarb/`. As a check, each run compares the repo's files before and after, and warns if any outside `.aiarb/` changed, most likely because you edited them while it ran.
+- Every agent call carries a spend cap, `budget.per_call`. The run has a total budget, `budget.per_run`, which counts every call, including those in steps that failed and were retried. Once the run has spent it, no further call starts and each Claude Code call is capped at what is left, so a run overshoots by at most the calls already under way. The run stops with exit code `5`, keeps its progress, and carries on with `aiarb resume` once you raise the budget.
+- Secrets are redacted from the output files, the log and what the commands print: the values of secret-looking variables in your environment (`ANTHROPIC_API_KEY` and the like), keys in well-known formats, private keys, passwords in URLs, and values assigned to names like `password` or `api_key`. Redaction is best effort. The checkpoints keep the run's text as it was, so a resumed run carries on from what the agents actually said; they stay in `.aiarb/runs/`, out of git.
 
 ## Cost and time
 

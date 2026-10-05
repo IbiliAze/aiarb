@@ -1,6 +1,7 @@
 """Running a run from the command line: progress while it goes, the user's
 decisions when it pauses, and what it came to, as a summary on standard error
-and JSON on standard output.
+and JSON on standard output. What the agents wrote is redacted before it is
+shown.
 """
 
 from __future__ import annotations
@@ -9,7 +10,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import typer
 from rich.markup import escape
@@ -18,10 +19,10 @@ from rich.prompt import Prompt
 from aiarb import output
 from aiarb.cli.progress import LiveProgress, duration
 from aiarb.cli.setup import ExitCode, Setup
-from aiarb.config.charter import Charter
+from aiarb.config.charter import CHARTER_PATH, Charter
 from aiarb.domain.ledger import Status
 from aiarb.graph import runner
-from aiarb.graph.state import total_cost
+from aiarb.observe.calls import OverBudget
 from aiarb.output.report import RUN_STATUS_LABELS, Report, plural
 from aiarb.ports.calls import CallError
 from aiarb.ports.run_store import RunStore
@@ -34,9 +35,11 @@ if TYPE_CHECKING:
     from aiarb.graph.context import RunContext
     from aiarb.graph.nodes.decide import DecisionRequest, Question
     from aiarb.graph.runner import Progress, RunResult
+    from aiarb.observe.redact import Redactor
 
 WAITING = "waiting_for_decisions"
 STOPPED = "stopped"
+OVER_BUDGET = "over_budget"
 
 FILE_NOTES = {
     "plan.md": "the plan, and what to settle before building",
@@ -73,6 +76,11 @@ class Session:
             if progress.run_id is None:
                 raise
             return self._report_stopped(progress.run_id, "interrupted", began, interrupted=True)
+        except OverBudget as error:
+            progress.idle()
+            if progress.run_id is None:
+                raise
+            return self._report_stopped(progress.run_id, str(error), began, over_budget=error)
         except Exception as error:
             progress.idle()
             if progress.run_id is None:
@@ -101,13 +109,26 @@ class Session:
         return result
 
     def _report_stopped(
-        self, run_id: str, error: str, began: float, *, interrupted: bool = False
+        self,
+        run_id: str,
+        error: str,
+        began: float,
+        *,
+        interrupted: bool = False,
+        over_budget: OverBudget | None = None,
     ) -> ExitCode:
         try:
             result = asyncio.run(runner.load(self.store, run_id))
         except Exception:
             result = None
-        return self.report(result, began=began, run_id=run_id, error=error, interrupted=interrupted)
+        return self.report(
+            result,
+            began=began,
+            run_id=run_id,
+            error=error,
+            interrupted=interrupted,
+            over_budget=over_budget,
+        )
 
     def report(
         self,
@@ -117,24 +138,32 @@ class Session:
         run_id: str | None = None,
         error: str | None = None,
         interrupted: bool = False,
+        over_budget: OverBudget | None = None,
     ) -> ExitCode:
         """Tell the user what the run came to, and give the exit code for it.
 
         `result` is None when the run stopped and could not be read back.
         """
         console = self.setup.console
+        redactor = self.setup.redactor
         run_id = result.run_id if result is not None else run_id
         assert run_id is not None, "a report needs a run"
         folder = self.store.folder(run_id)
+        error = redactor.text(error) if error is not None else None
         if result is not None and result.finished:
             report = Report.of(result.state, self.charter, run_id)
             code = ExitCode(report.outcome.exit_code)
             data = _finished(report, folder)
-            _print_finished(console, report, folder)
+            _print_finished(console, report, folder, redactor)
         elif result is not None and result.request is not None:
+            request = _redacted(redactor, result.request)
             code = ExitCode.WAITING
-            data = _waiting(result.request)
-            _print_waiting(console, run_id, result.request)
+            data = _waiting(request)
+            _print_waiting(console, run_id, request)
+        elif over_budget is not None:
+            code = ExitCode.OVER_BUDGET
+            data = {"status": OVER_BUDGET, "error": error, "budget_usd": over_budget.budget}
+            _print_over_budget(console, run_id, over_budget)
         else:
             code = ExitCode.ERROR
             data = {"status": STOPPED, "error": error or "the run stopped part way"}
@@ -150,7 +179,7 @@ class Session:
         }
         if result is not None:
             state = result.state
-            spent = total_cost(state).usd
+            spent = result.spent.usd
             took = "" if began is None else f" · {duration(self.setup.clock() - began)}"
             console.print(f"[dim]{plural(state['round'], 'round')} · ${spent:.2f}{took}[/]")
             record |= {"rounds": state["round"], "cost_usd": round(spent, 6)}
@@ -183,7 +212,11 @@ def _waiting(request: DecisionRequest) -> dict[str, Any]:
 _STYLES = {"settled": "green", "settled_with_open_items": "yellow", "not_ready": "red"}
 
 
-def _print_finished(console: Console, report: Report, folder: Path) -> None:
+def _redacted(redactor: Redactor, request: DecisionRequest) -> DecisionRequest:
+    return cast("DecisionRequest", redactor.data(request))
+
+
+def _print_finished(console: Console, report: Report, folder: Path, redactor: Redactor) -> None:
     result = report.outcome
     label = RUN_STATUS_LABELS[result.status]
     style = _STYLES[result.status.value]
@@ -198,7 +231,8 @@ def _print_finished(console: Console, report: Report, folder: Path) -> None:
     console.print()
     console.print(f"[bold {style}]{headline}[/] {advice}")
     for item in sorted(result.open_items, key=lambda item: -item.severity.rank):
-        console.print(f"  {item.id}  [bold]{item.severity}[/]  {escape(report.title(item))}")
+        title = redactor.text(report.title(item))
+        console.print(f"  {item.id}  [bold]{item.severity}[/]  {escape(title)}")
     to_apply = [
         f"{whose} {_on(noun, ids)}"
         for whose, noun, status in (
@@ -265,10 +299,24 @@ def _print_stopped(console: Console, run_id: str, error: str | None, *, interrup
     console.print(f"Its progress is saved. Carry on with: aiarb resume {run_id}", soft_wrap=True)
 
 
+def _print_over_budget(console: Console, run_id: str, over: OverBudget) -> None:
+    console.print()
+    console.print(
+        f"[bold yellow]Stopped at the budget:[/] the run has spent ${over.spent.usd:.2f} "
+        f"of its ${over.budget:.2f}."
+    )
+    console.print(
+        f"Its progress is saved. Raise budget.per_run in {CHARTER_PATH}, then carry on "
+        f"with: aiarb resume {run_id}",
+        soft_wrap=True,
+    )
+
+
 def ask_decisions(setup: Setup, request: DecisionRequest) -> dict[str, str] | None:
     """Ask the user to decide each question. None if they leave one blank, to
     decide later."""
     console = setup.console
+    request = _redacted(setup.redactor, request)
     questions = request["questions"]
     console.print()
     console.print(

@@ -34,9 +34,13 @@ class Report:
     costs: Mapping[Role, Cost]
     charter: Charter
     """The charter as the run used it, with any round limit the run was given."""
+    spent: Cost | None = None
+    """Everything the run spent, including calls in steps that failed, when known."""
 
     @classmethod
-    def of(cls, state: RunState, charter: Charter, run_id: str | None) -> Report:
+    def of(
+        cls, state: RunState, charter: Charter, run_id: str | None, *, spent: Cost | None = None
+    ) -> Report:
         if state["max_rounds"] is not None:
             debate = charter.debate.model_copy(update={"max_rounds": state["max_rounds"]})
             charter = charter.model_copy(update={"debate": debate})
@@ -50,6 +54,7 @@ class Report:
             outcome=outcome(state["ledger"]),
             costs=state["costs"],
             charter=charter,
+            spent=spent,
         )
 
     def explained(self, item: Objection) -> ExplainedItem | None:

@@ -71,3 +71,15 @@ def test_at_a_terminal_the_step_under_way_is_live_and_then_cleared() -> None:
     assert not live.live.is_started
     assert "✓ Scanned the repo" in out.getvalue()
     assert "… Scanning" not in out.getvalue()
+
+
+def test_warns_of_files_changed_while_the_run_went() -> None:
+    shown, out = progress(terminal=False)
+
+    shown.repo_changed([f"src/{n}.py" for n in range(7)])
+
+    assert out.getvalue() == (
+        "Files in the repo changed while the run went: src/0.py, src/1.py, src/2.py, src/3.py, "
+        "src/4.py and 2 more. The review may not reflect those changes. aiarb itself writes "
+        "only to .aiarb/.\n"
+    )

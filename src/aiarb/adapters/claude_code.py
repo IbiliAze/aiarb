@@ -41,7 +41,13 @@ from claude_agent_sdk import query as sdk_query
 from pydantic import BaseModel, ValidationError
 
 import aiarb
-from aiarb.ports.calls import CallError, Cost, FatalCallError, RetryableCallError
+from aiarb.ports.calls import (
+    CallError,
+    Cost,
+    FatalCallError,
+    RetryableCallError,
+    SpendCapReached,
+)
 from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
 
 if TYPE_CHECKING:
@@ -148,11 +154,17 @@ class ClaudeCodeAgent:
                 "append": SYSTEM_PROMPT_APPEND,
             },
             output_format={"type": "json_schema", "schema": answer_schema(request.schema)},
-            max_budget_usd=self.spend_cap_usd,
+            max_budget_usd=self.cap_for(request),
             verbatim_prompts=True,
             cli_path=self.cli_path,
             env={"CLAUDE_AGENT_SDK_CLIENT_APP": f"aiarb/{aiarb.__version__}"},
         )
+
+    def cap_for(self, request: AgentRequest[Any]) -> float:
+        """The most the call may spend: the agent's cap, or the request's if lower."""
+        if request.spend_cap_usd is None:
+            return self.spend_cap_usd
+        return min(self.spend_cap_usd, request.spend_cap_usd)
 
     async def _run(
         self, request: AgentRequest[OutputT], *, resume: str | None
@@ -160,7 +172,12 @@ class ClaudeCodeAgent:
         options = self.options(request, resume=resume)
         stderr: deque[str] = deque(maxlen=_STDERR_LINES)
         options.stderr = stderr.append
-        call = _Call(self.spend_cap_usd, resumed=resume is not None)
+        cap = self.cap_for(request)
+        # When the two caps are the same, the run's budget is the one to raise.
+        by_request = (
+            request.spend_cap_usd is not None and request.spend_cap_usd <= self.spend_cap_usd
+        )
+        call = _Call(cap, by_request=by_request, resumed=resume is not None)
         try:
             async for message in self._query(prompt=request.prompt, options=options):
                 call.see(message)
@@ -197,8 +214,10 @@ class _LostSessionError(Exception):
 class _Call:
     """What one session reported, and how to explain it when it fails."""
 
-    def __init__(self, spend_cap_usd: float, *, resumed: bool) -> None:
+    def __init__(self, spend_cap_usd: float, *, by_request: bool, resumed: bool) -> None:
         self.spend_cap_usd = spend_cap_usd
+        self.by_request = by_request
+        """Whether the cap is the request's, rather than the per-call one."""
         self.resumed = resumed
         self.result: ResultMessage | None = None
         self.trouble: str | None = None
@@ -223,10 +242,12 @@ class _Call:
             return _LostSessionError()
         detail = "; ".join(errors) or (result.result or "").strip() or result.subtype
         if result.subtype == "error_max_budget_usd":
-            return FatalCallError(
-                f"the call reached its spend cap of ${self.spend_cap_usd:.2f} "
-                f"(budget.per_call in the charter) after spending ${cost.usd:.2f}",
+            source = "" if self.by_request else " (budget.per_call in the charter)"
+            return SpendCapReached(
+                f"the call reached its spend cap of ${self.spend_cap_usd:.2f}{source} "
+                f"after spending ${cost.usd:.2f}",
                 cost=cost,
+                by_request=self.by_request,
             )
         if result.subtype == "error_max_structured_output_retries":
             return RetryableCallError(

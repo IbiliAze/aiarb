@@ -27,12 +27,20 @@ class AgentRequest(Generic[OutputT]):
     """The shape the agent's final answer must take."""
     session_id: str | None = None
     """An earlier session to continue, so the agent keeps what it already read."""
+    role: str | None = None
+    """Who is asking, such as the planner, for the run's log."""
+    spend_cap_usd: float | None = None
+    """The most this call may spend, when that is less than the agent's own cap:
+    what is left of the run's budget. A call that reaches it raises
+    `SpendCapReached`."""
 
     def __post_init__(self) -> None:
         if not self.prompt.strip():
             raise ValueError("an agent request needs a prompt")
         if not self.model.strip():
             raise ValueError("an agent request needs a model")
+        if self.spend_cap_usd is not None and self.spend_cap_usd <= 0:
+            raise ValueError(f"the spend cap must be positive, got {self.spend_cap_usd}")
 
 
 @dataclass(frozen=True, kw_only=True)

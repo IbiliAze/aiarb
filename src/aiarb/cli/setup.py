@@ -17,6 +17,7 @@ from aiarb.adapters.claude_code import ClaudeCodeAgent
 from aiarb.adapters.scoring import scorers_for
 from aiarb.config.charter import Charter
 from aiarb.config.settings import Settings
+from aiarb.observe.redact import Redactor
 from aiarb.ports.code_agent import CodeAgent
 from aiarb.ports.run_store import RunStore
 from aiarb.ports.scorer import Scorer
@@ -32,6 +33,8 @@ class ExitCode(IntEnum):
     ERROR = 4
     """aiarb could not run as asked, or the run stopped part way. A stopped run
     can be resumed."""
+    OVER_BUDGET = 5
+    """The run stopped at its budget. It can be resumed once the budget is raised."""
     INTERRUPTED = 130
     """Stopped with Ctrl-C. The run can be resumed."""
 
@@ -75,3 +78,5 @@ class Setup:
     """Where people read: progress, summaries, questions. Standard output is
     kept for JSON."""
     clock: Callable[[], float] = time.monotonic
+    redactor: Redactor = field(default_factory=Redactor.from_environment)
+    """Takes secrets out of what the commands print and the runs write."""

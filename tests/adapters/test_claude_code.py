@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
@@ -34,7 +34,13 @@ from aiarb.adapters.claude_code import (
 )
 from aiarb.adapters.llm_scorer import _choice_among
 from aiarb.config.charter import Charter
-from aiarb.ports.calls import CallError, Cost, FatalCallError, RetryableCallError
+from aiarb.ports.calls import (
+    CallError,
+    Cost,
+    FatalCallError,
+    RetryableCallError,
+    SpendCapReached,
+)
 from aiarb.ports.code_agent import AgentRequest, CodeAgent
 from aiarb.schemas import outputs
 
@@ -277,8 +283,38 @@ class TestTheAnswer:
 async def test_reaching_the_spend_cap_is_fatal_and_keeps_the_cost(tmp_path: Path) -> None:
     code, _ = agent(failing("error_max_budget_usd", total_cost_usd=10.31))
 
-    with pytest.raises(FatalCallError, match=r"spend cap of \$10\.00 .* after spending \$10\.31"):
+    with pytest.raises(
+        SpendCapReached, match=r"spend cap of \$10\.00 .* after spending \$10\.31"
+    ) as raised:
         await code.run(request(tmp_path))
+    assert "budget.per_call" in str(raised.value)
+    assert raised.value.cost.usd == 10.31
+    assert not raised.value.by_request
+
+
+class TestRequestCap:
+    async def test_a_lower_cap_on_the_request_caps_the_call(self, tmp_path: Path) -> None:
+        code, fake = agent(Session([result()]))
+
+        await code.run(replace(request(tmp_path), spend_cap_usd=2.5))
+
+        assert fake.options.max_budget_usd == 2.5
+
+    async def test_a_higher_cap_on_the_request_does_not_raise_the_agents(
+        self, tmp_path: Path
+    ) -> None:
+        code, fake = agent(Session([result()]))
+
+        await code.run(replace(request(tmp_path), spend_cap_usd=25))
+
+        assert fake.options.max_budget_usd == 10
+
+    async def test_reaching_the_requests_cap_says_so(self, tmp_path: Path) -> None:
+        code, _ = agent(failing("error_max_budget_usd", total_cost_usd=2.6))
+
+        with pytest.raises(SpendCapReached, match=r"spend cap of \$2\.50 after") as raised:
+            await code.run(replace(request(tmp_path), spend_cap_usd=2.5))
+        assert raised.value.by_request
 
 
 RESETS_AT = 1_791_000_000

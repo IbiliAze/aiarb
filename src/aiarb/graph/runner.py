@@ -8,25 +8,36 @@ the folder the run's files are written to when it finishes.
 Once a run has paused or finished, the user can reopen items with new evidence:
 those items are debated again, with a full set of rounds, and the run finishes
 as before.
+
+Each time a run goes, it is watched: every step and outside call is written to
+its log, every call is counted against its budget, and the repo is checked for
+changes outside `.aiarb/` when it stops.
 """
 
 from __future__ import annotations
 
+import asyncio
+import time
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, Protocol, cast
 
 from langgraph.types import Command, Durability
 
+import aiarb
 from aiarb.domain.ledger import Actor, Status, TransitionError
 from aiarb.graph.builder import build_graph, run_config
 from aiarb.graph.nodes.decide import DecisionRequest, decided
 from aiarb.graph.routing import round_limit
-from aiarb.graph.state import RunState
+from aiarb.graph.state import RunState, total_cost
+from aiarb.observe.calls import Meter, watch
+from aiarb.observe.log import LOG, RunLog, logged_spend
+from aiarb.observe.repo import RepoSnapshot
+from aiarb.ports.calls import Cost
 from aiarb.ports.run_store import RunNotFound
 
 if TYPE_CHECKING:
-    from collections.abc import AsyncIterator, Mapping
+    from collections.abc import AsyncIterator, Callable, Mapping, Sequence
 
     from langchain_core.runnables import RunnableConfig
     from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
@@ -66,6 +77,9 @@ class Progress(Protocol):
     def finished(self, step: str, state: RunState) -> None:
         """A step finished and was saved. `state` includes what it changed."""
 
+    def repo_changed(self, paths: Sequence[str]) -> None:
+        """Files in the repo outside `.aiarb/` changed while the run went."""
+
 
 class _Unwatched:
     def opened(self, run_id: str, state: RunState) -> None:
@@ -77,6 +91,9 @@ class _Unwatched:
     def finished(self, step: str, state: RunState) -> None:
         pass
 
+    def repo_changed(self, paths: Sequence[str]) -> None:
+        pass
+
 
 @dataclass(frozen=True, kw_only=True)
 class RunResult:
@@ -86,6 +103,9 @@ class RunResult:
     """The questions the run is waiting on, when it paused for decisions."""
     next: tuple[str, ...] = ()
     """The steps the run takes when it carries on. None once it has finished."""
+    spent: Cost = field(default_factory=Cost)
+    """What the run has spent, counting the calls in steps that failed, which the
+    state's costs leave out."""
 
     @property
     def paused(self) -> bool:
@@ -108,9 +128,11 @@ async def start(
 ) -> RunResult:
     """Start a new run from `state`, and run it until it finishes or pauses."""
     name = state["feature"] or ("plan" if state["given_plans"] else None)
-    run_id = store.create(name)
+    # The run's ID is made from its name, and appears everywhere.
+    run_id = store.create(context.redactor.text(name) if name else None)
     async with _open(store, run_id, context) as run:
-        return await run.go(state, state, progress)
+        details = {"feature": state["feature"], "plans": len(state["given_plans"])}
+        return await run.go(state, state, progress, how="start", **details)
 
 
 async def resume(
@@ -137,7 +159,9 @@ async def resume(
         if before.finished or (before.paused and answers is None):
             return before
         command: Any = None if answers is None else Command(resume=dict(answers))
-        return await run.go(command, before.state, progress)
+        return await run.go(
+            command, before.state, progress, how="resume", decided=sorted(answers or ())
+        )
 
 
 async def reopen(
@@ -179,7 +203,14 @@ async def reopen(
         # As if triage had just sent the reopened items to debate.
         await run.graph.aupdate_state(_thread(run_id), update, as_node="triage")
         reopened = await run.result()
-        return await run.go(None, reopened.state, progress)
+        return await run.go(
+            None,
+            reopened.state,
+            progress,
+            how="reopen",
+            reopened=sorted(evidence),
+            decided=sorted(answers or ()),
+        )
 
 
 async def load(store: RunStore, run_id: str) -> RunResult:
@@ -187,7 +218,7 @@ async def load(store: RunStore, run_id: str) -> RunResult:
     async with store.checkpointer(run_id) as saver:
         graph = build_graph(checkpointer=saver)
         snapshot = await graph.aget_state(_thread(run_id))
-        return _result(run_id, snapshot)
+        return _result(run_id, snapshot, logged_spend(store.folder(run_id) / LOG))
 
 
 def _reopened(state: RunState, id: str, evidence: str) -> Objection:
@@ -225,55 +256,160 @@ def _item(state: RunState, id: str) -> Objection:
 
 
 class _Run:
-    """One run's graph, open on its checkpoints."""
+    """One run's graph, open on its checkpoints, with its log."""
 
     def __init__(
         self,
         run_id: str,
         graph: CompiledStateGraph[RunState, RunContext, RunState, RunState],
         context: RunContext,
+        log: RunLog,
     ) -> None:
         self.run_id = run_id
         self.graph = graph
         self.context = context
+        self.log = log
 
     async def result(self) -> RunResult:
-        return _result(self.run_id, await self.graph.aget_state(_thread(self.run_id)))
+        snapshot = await self.graph.aget_state(_thread(self.run_id))
+        return _result(self.run_id, snapshot, self.log.spent())
 
-    async def go(self, input: Any, state: RunState, progress: Progress | None) -> RunResult:
-        """Run the graph until it finishes or pauses, telling `progress` of each step."""
+    async def go(
+        self, input: Any, state: RunState, progress: Progress | None, *, how: str, **details: Any
+    ) -> RunResult:
+        """Run the graph until it finishes, pauses or fails, telling `progress` and
+        the log of each step."""
         progress = progress or _Unwatched()
         progress.opened(self.run_id, state)
-        finishing: list[str] = []
-        config = run_config(self.run_id, round_limit(state, self.context.charter))
+        charter = self.context.charter
+        meter = Meter(charter.budget.per_run, _spent(state, self.log.spent()))
+        context = watch(self.context, self.log, meter)
+        limit = round_limit(state, charter)
+        self.log.write(
+            "opened",
+            how=how,
+            **details,
+            aiarb_version=aiarb.__version__,
+            round=state["round"],
+            round_limit=limit,
+            budget_usd=meter.budget,
+            spent_usd=round(meter.spent.usd, 6),
+            models=charter.models.model_dump(),
+        )
+        steps = _Steps(progress, self.log)
+        before = RepoSnapshot.take(context.repo)
         stream = self.graph.astream(
             input,
-            config,
-            context=self.context,
+            run_config(self.run_id, limit),
+            context=context,
             durability=DURABILITY,
             stream_mode=["tasks", "values"],
         )
-        # With several stream modes, each chunk comes as (mode, data).
-        # A step's own result comes before the state it leads to, and a step that
-        # changes nothing leads to no new state, so each step is reported finished
-        # at whichever comes next: the new state, another step, or the end.
-        async for mode, chunk in cast("AsyncIterator[tuple[str, dict[str, Any]]]", stream):
-            if mode == "values":
-                state = cast("RunState", {k: v for k, v in chunk.items() if k != "__interrupt__"})
-                _report(progress, finishing, state)
-            elif "input" in chunk:
-                _report(progress, finishing, state)
-                progress.started(chunk["name"], state)
-            elif chunk["error"] is None and not chunk["interrupts"]:
-                finishing.append(chunk["name"])
-        _report(progress, finishing, state)
-        return await self.result()
+        try:
+            # With several stream modes, each chunk comes as (mode, data).
+            # A step's own result comes before the state it leads to, and a step
+            # that changes nothing leads to no new state, so each step is
+            # reported finished at whichever comes next: the new state, another
+            # step, or the end.
+            async for mode, chunk in cast("AsyncIterator[tuple[str, dict[str, Any]]]", stream):
+                if mode == "values":
+                    state = cast(
+                        "RunState", {k: v for k, v in chunk.items() if k != "__interrupt__"}
+                    )
+                    steps.report(state)
+                elif "input" in chunk:
+                    steps.report(state)
+                    steps.started(chunk["name"], state)
+                elif chunk["error"] is None and not chunk["interrupts"]:
+                    steps.finishing.append(chunk["name"])
+            steps.report(state)
+        except BaseException as error:
+            interrupted = isinstance(error, KeyboardInterrupt | asyncio.CancelledError)
+            self.log.write(
+                "stopped",
+                step=steps.under_way,
+                interrupted=interrupted,
+                error=None if interrupted else str(error) or type(error).__name__,
+                error_type=type(error).__name__,
+                spent_usd=round(meter.spent.usd, 6),
+            )
+            raise
+        finally:
+            changed = before.changes(RepoSnapshot.take(context.repo))
+            if changed:
+                self.log.write("repo_changed", paths=changed[:_LOGGED_PATHS], count=len(changed))
+                progress.repo_changed(changed)
+        result = await self.result()
+        self._log_end(result)
+        return result
+
+    def _log_end(self, result: RunResult) -> None:
+        state = result.state
+        spent = round(result.spent.usd, 6)
+        if result.request is not None:
+            questions = [question["id"] for question in result.request["questions"]]
+            self.log.write("paused", questions=questions, round=state["round"], spent_usd=spent)
+        elif result.finished:
+            status = state["status"].value if state["status"] is not None else None
+            self.log.write("finished", status=status, rounds=state["round"], spent_usd=spent)
+        else:
+            self.log.write("stopped", interrupted=False, error=None, spent_usd=spent)
 
 
-def _report(progress: Progress, finishing: list[str], state: RunState) -> None:
-    for step in finishing:
-        progress.finished(step, state)
-    finishing.clear()
+_LOGGED_PATHS = 50
+"""The most changed paths the log lists."""
+
+
+class _Steps:
+    """Tells the progress and the log of each step as it starts and finishes."""
+
+    def __init__(
+        self, progress: Progress, log: RunLog, clock: Callable[[], float] = time.monotonic
+    ) -> None:
+        self.progress = progress
+        self.log = log
+        self.clock = clock
+        self.finishing: list[str] = []
+        """Steps that have finished, to report with the state they lead to."""
+        self._began: dict[str, tuple[float, Cost]] = {}
+
+    def started(self, step: str, state: RunState) -> None:
+        self._began[step] = (self.clock(), total_cost(state))
+        self.progress.started(step, state)
+        self.log.write("step_started", step=step, **_where(state))
+
+    @property
+    def under_way(self) -> str | None:
+        """The step that started and has not finished, if any."""
+        return next(iter(self._began), None)
+
+    def report(self, state: RunState) -> None:
+        for step in self.finishing:
+            self.progress.finished(step, state)
+            began, cost = self._began.pop(step, (self.clock(), total_cost(state)))
+            self.log.write(
+                "step_finished",
+                step=step,
+                seconds=round(self.clock() - began, 3),
+                cost_usd=round(max(total_cost(state).usd - cost.usd, 0.0), 6),
+                **_where(state),
+            )
+        self.finishing.clear()
+
+
+def _where(state: RunState) -> dict[str, Any]:
+    return {
+        "round": state["round"],
+        "open": sum(item.is_open for item in state["ledger"].values()),
+        "spent_usd": round(total_cost(state).usd, 6),
+    }
+
+
+def _spent(state: RunState, logged: Cost) -> Cost:
+    """What the run has spent: what its log counts, or what its state does for a
+    run whose log is missing or older than the run."""
+    recorded = total_cost(state)
+    return logged if logged.usd >= recorded.usd else recorded
 
 
 def _thread(run_id: str) -> RunnableConfig:
@@ -285,18 +421,22 @@ def _thread(run_id: str) -> RunnableConfig:
 async def _open(store: RunStore, run_id: str, context: RunContext) -> AsyncIterator[_Run]:
     if not store.exists(run_id):
         raise RunNotFound(f"no run {run_id!r}")
-    context = replace(context, run_dir=store.folder(run_id))
+    folder = store.folder(run_id)
+    context = replace(context, run_dir=folder)
+    log = RunLog(folder / LOG, context.redactor)
     async with store.checkpointer(run_id) as saver:
-        yield _Run(run_id, build_graph(checkpointer=saver), context)
+        yield _Run(run_id, build_graph(checkpointer=saver), context, log)
 
 
-def _result(run_id: str, snapshot: StateSnapshot) -> RunResult:
+def _result(run_id: str, snapshot: StateSnapshot, logged: Cost) -> RunResult:
     if not snapshot.values:
         raise RunNotFound(f"run {run_id} stopped before saving anything: start it again")
+    state = cast("RunState", snapshot.values)
     request = snapshot.interrupts[0].value if snapshot.interrupts else None
     return RunResult(
         run_id=run_id,
-        state=cast("RunState", snapshot.values),
+        state=state,
         request=request,
         next=tuple(snapshot.next),
+        spent=_spent(state, logged),
     )

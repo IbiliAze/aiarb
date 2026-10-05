@@ -69,7 +69,9 @@ class LanguageModelScorer:
         return Judgement(value=answer.answer, confidence=answer.confidence, cost=result.cost)
 
     async def _ask(self, prompt: str, schema: type[OutputT]) -> AgentResult[OutputT]:
-        request = AgentRequest(prompt=prompt, repo=self._repo, model=self._model, schema=schema)
+        request = AgentRequest(
+            prompt=prompt, repo=self._repo, model=self._model, schema=schema, role="scorer"
+        )
         return await self._agent.run(request)
 
 

@@ -2,6 +2,7 @@
 
     .aiarb/runs/2026-10-05-add-a-virtual-waiting-room/
         checkpoints.sqlite
+        log.jsonl                                    (appended as the run goes)
         plan.md, ledger.md, decisions.md, run.json   (once the run finishes)
 
 Each checkpoint is written as the step that made it finishes, so a run that is

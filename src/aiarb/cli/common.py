@@ -70,6 +70,7 @@ def context_for(setup: Setup, charter: Charter, repo: Path) -> RunContext:
         agent=ports.agent,
         scorer=ports.scorer,
         confirmer=ports.confirmer,
+        redactor=setup.redactor,
     )
 
 

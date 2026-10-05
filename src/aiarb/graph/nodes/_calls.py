@@ -37,6 +37,7 @@ async def ask(
         model=getattr(context.charter.models, role),
         schema=schema,
         session_id=session_id,
+        role=role,
     )
     return await context.agent.run(request)
 

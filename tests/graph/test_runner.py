@@ -1,4 +1,5 @@
 import asyncio
+from collections.abc import Sequence
 from datetime import date
 from pathlib import Path
 from typing import Any
@@ -486,6 +487,9 @@ class Recorder:
     def finished(self, step: str, state: RunState) -> None:
         self.events.append(("finished", step))
         self.costs.append(total_cost(state).usd)
+
+    def repo_changed(self, paths: Sequence[str]) -> None:
+        self.events.append(("repo_changed", ", ".join(paths)))
 
 
 class TestProgress:

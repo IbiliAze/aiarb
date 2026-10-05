@@ -10,12 +10,13 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from rich.markup import escape
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 
 from aiarb.graph.state import total_cost
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping
+    from collections.abc import Callable, Mapping, Sequence
 
     from rich.console import Console
 
@@ -52,6 +53,9 @@ DONE: Mapping[str, str] = {
 }
 
 _IN_ROUND = frozenset({"respond", "rule", "verify", "judge"})
+
+_SHOWN_PATHS = 5
+"""The most changed files named in the warning."""
 
 
 class LiveProgress:
@@ -106,6 +110,15 @@ class LiveProgress:
         done = _label(DONE, step, state)
         where = _where(step, state, starting=False)
         self.console.print(f"  [green]✓[/] {done}{where}[dim]{took}{spent}[/]")
+
+    def repo_changed(self, paths: Sequence[str]) -> None:
+        shown = ", ".join(escape(path) for path in paths[:_SHOWN_PATHS])
+        more = f" and {len(paths) - _SHOWN_PATHS} more" if len(paths) > _SHOWN_PATHS else ""
+        self.console.print(
+            f"[yellow]Files in the repo changed while the run went: {shown}{more}.[/] "
+            "The review may not reflect those changes. aiarb itself writes only to .aiarb/.",
+            soft_wrap=True,
+        )
 
     def idle(self) -> None:
         """Clear the live line, as when the run has stopped or paused."""

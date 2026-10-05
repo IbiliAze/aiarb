@@ -17,9 +17,12 @@ def finalise(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
 
     This is the only node that writes files. Without a run folder, as in Studio,
     it writes none. The folder is named by the run's ID, which `run.json` records.
+    The files are redacted.
     """
-    run_dir = runtime.context.run_dir
+    context = runtime.context
+    run_dir = context.run_dir
     if run_dir is not None:
-        report = output.Report.of(state, runtime.context.charter, run_id=run_dir.name)
-        output.write(run_dir, output.render(report))
+        spent = context.meter.spent if context.meter is not None else None
+        report = output.Report.of(state, context.charter, run_id=run_dir.name, spent=spent)
+        output.write(run_dir, output.render(report, redactor=context.redactor))
     return {"status": outcome(state["ledger"]).status}
