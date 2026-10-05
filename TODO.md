@@ -44,7 +44,7 @@
 
 ## 5. Graph on fakes
 
-- [ ] Define the state schema with reducers for the ledger and cost totals
+- [x] Define the state schema with reducers for the ledger and cost totals
 - [ ] Define the runtime context: charter plus the injected ports
 - [ ] Write each node as a small function returning a state update
 - [ ] Write the routing functions: next round, stalemate, round limit, judge needed, decisions needed

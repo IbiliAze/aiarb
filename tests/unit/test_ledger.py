@@ -397,3 +397,19 @@ class TestEvent:
     def test_needs_a_note(self) -> None:
         with pytest.raises(ValueError, match="needs a note"):
             Event(round=0, actor=Actor.CRITIC, status=Status.OPEN, severity=Severity.MAJOR, note="")
+
+
+def test_sequences_given_as_lists_are_stored_as_tuples() -> None:
+    item = Objection(
+        id="OBJ-1",
+        claim="A claim.",
+        evidence=[CODE],  # type: ignore[arg-type]
+        type=ObjectionType.DESIGN,
+        history=list(raised().history),  # type: ignore[arg-type]
+    )
+    resolution = Resolution(ResolutionKind.EVIDENCE, [CODE])  # type: ignore[arg-type]
+
+    assert item.evidence == (CODE,)
+    assert isinstance(item.history, tuple)
+    assert isinstance(item.history[0].refs, tuple)
+    assert resolution.refs == (CODE,)

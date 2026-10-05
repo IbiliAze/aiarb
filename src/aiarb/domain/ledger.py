@@ -116,6 +116,16 @@ class PlanRef:
 Ref: TypeAlias = CodeRef | PlanRef
 
 
+def _freeze(instance: object, *fields: str) -> None:
+    """Store sequence fields as tuples, whatever they were given as.
+
+    Checkpoints restore tuples as lists. Without this, a restored objection would
+    not equal the one that was saved.
+    """
+    for name in fields:
+        object.__setattr__(instance, name, tuple(getattr(instance, name)))
+
+
 class ResolutionKind(StrEnum):
     PLAN_CHANGE = "plan_change"
     """The plan was changed to address the objection."""
@@ -129,6 +139,7 @@ class Resolution:
     refs: tuple[Ref, ...]
 
     def __post_init__(self) -> None:
+        _freeze(self, "refs")
         if not self.refs:
             raise ValueError("a resolution must cite what settled it")
         if self.kind is ResolutionKind.PLAN_CHANGE and not any(
@@ -150,6 +161,7 @@ class Event:
     resolution: Resolution | None = None
 
     def __post_init__(self) -> None:
+        _freeze(self, "refs")
         if self.round < 0:
             raise ValueError(f"rounds start at 0, got {self.round}")
         if not self.note.strip():
@@ -207,6 +219,7 @@ class Objection:
     history: tuple[Event, ...]
 
     def __post_init__(self) -> None:
+        _freeze(self, "evidence", "history")
         if not self.id.strip():
             raise ValueError("an objection needs an id")
         if not self.claim.strip():
