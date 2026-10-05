@@ -128,6 +128,7 @@
 ## 15. Release
 
 - [x] Write the README: what an ARB is, install, quick start, charter reference, cost expectations
-- [ ] Tag 1.0.0 (version set in `pyproject.toml`; the tag goes on the release commit)
-- [ ] ~~Publish to PyPI~~: not publishing; install from GitHub instead
+- [x] Tag 1.0.0
+- [ ] ~~Publish to PyPI~~: not publishing publicly
+- [x] Publish to the private GitLab registry, by hand for 1.0.0 and from CI on each `v*` tag
 - [x] Check a clean install works with pipx: from the built wheel, as `pipx install aiarb` would get it from PyPI

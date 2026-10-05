@@ -32,7 +32,7 @@ dependencies = [
 ]
 
 [project.urls]
-Repository = "https://github.com/IbiliAze/aiarb"
+Repository = "https://gitlab.com/projects4833423/aiarb"
 
 [project.scripts]
 aiarb = "aiarb.cli.app:app"

@@ -2,7 +2,7 @@
 
 **An AI architecture review board for your codebase.** Give it a feature you want to add to an existing app. One model plans it, another attacks the plan, and they argue it out against your actual code until the plan is settled. You get one polished plan, a plain-English record of every objection, and a short list of the decisions only you can make.
 
-> **Status: 1.0.0.** aiarb is not on PyPI: install it from GitHub, as below.
+> **Status: 1.0.0.** aiarb is not on public PyPI: it is published to a private GitLab registry, as below.
 
 ## Why
 
@@ -70,16 +70,19 @@ The planner and critic each run inside [Claude Code](https://docs.claude.com/en/
 
 ## Install
 
-aiarb is not published to PyPI. Install it from GitHub with [pipx](https://pipx.pypa.io):
+aiarb is published to the package registry of its GitLab project, which is private. Install it with [pipx](https://pipx.pypa.io), using a GitLab token that can read the registry: a deploy token with `read_package_registry`, or a personal access token with `read_api`:
 
 ```bash
-pipx install git+https://github.com/IbiliAze/aiarb@v1.0.0
+pipx install aiarb --index-url \
+  "https://<token-name>:<token>@gitlab.com/api/v4/projects/projects4833423%2Faiarb/packages/pypi/simple"
 ```
 
-Or from a clone:
+For a personal access token, `<token-name>` is your GitLab username. The registry passes requests for aiarb's dependencies on to PyPI. Use `--index-url`, not `--extra-index-url`, so a package of the same name on public PyPI can never be picked instead.
+
+Or install from a clone:
 
 ```bash
-git clone https://github.com/IbiliAze/aiarb && cd aiarb
+git clone git@gitlab.com:projects4833423/aiarb.git && cd aiarb
 pipx install .
 ```
 
@@ -275,7 +278,7 @@ These were small features: the critic's only objection each time was minor, so t
 ## Development
 
 ```bash
-git clone https://github.com/IbiliAze/aiarb && cd aiarb
+git clone git@gitlab.com:projects4833423/aiarb.git && cd aiarb
 uv sync
 uv run pytest
 ```
@@ -287,6 +290,8 @@ There are also live tests, which run each role and scorer through real Claude Co
 ```bash
 AIARB_LIVE_TESTS=1 uv run pytest tests/live
 ```
+
+Pushing a `v*` tag publishes that version to the GitLab registry, once lint, type checks and tests pass (`.gitlab-ci.yml`). The tag must match the version in `pyproject.toml`.
 
 To see the graph in [LangGraph Studio](https://docs.langchain.com/langgraph-platform/langgraph-studio), run `uv run langgraph dev`.
 
