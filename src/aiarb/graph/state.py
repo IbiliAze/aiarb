@@ -14,6 +14,7 @@ from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
 from aiarb.domain import ledger
 from aiarb.domain.ledger import Objection
+from aiarb.domain.outcome import RunStatus
 from aiarb.domain.scoring import Severity
 from aiarb.ports.calls import Cost
 
@@ -80,6 +81,20 @@ class RunState(TypedDict):
     ledger: Annotated[dict[str, Objection], merge_ledger]
     costs: Annotated[dict[Role, Cost], add_costs]
     sessions: Annotated[dict[Role, str], merge_sessions]
+    status: RunStatus | None
+    """How the run ended. None until it finishes."""
+
+
+class StateUpdate(TypedDict, total=False):
+    """What a node returns: any subset of the state's keys."""
+
+    facts: str
+    plan: str
+    round: int
+    ledger: dict[str, Objection]
+    costs: dict[Role, Cost]
+    sessions: dict[Role, str]
+    status: RunStatus
 
 
 def initial_state(*, feature: str | None = None, given_plans: Sequence[str] = ()) -> RunState:
@@ -93,6 +108,7 @@ def initial_state(*, feature: str | None = None, given_plans: Sequence[str] = ()
         ledger={},
         costs={},
         sessions={},
+        status=None,
     )
 
 
@@ -113,6 +129,7 @@ CHECKPOINT_TYPES: tuple[tuple[str, str], ...] = tuple(
         ledger.Status,
         ledger.Actor,
         Severity,
+        RunStatus,
         Cost,
     )
 )

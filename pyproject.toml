@@ -74,8 +74,9 @@ select = [
 ]
 
 [tool.ruff.lint.flake8-type-checking]
-# Dataclass annotations are resolved at runtime by anything that introspects them.
+# Dataclass and pydantic annotations are resolved at runtime.
 runtime-evaluated-decorators = ["dataclasses.dataclass"]
+runtime-evaluated-base-classes = ["pydantic.BaseModel"]
 
 [tool.mypy]
 python_version = "3.11"
