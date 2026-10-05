@@ -48,10 +48,10 @@
 - [x] Define the runtime context: charter plus the injected ports
 - [x] Write each node as a small function returning a state update
 - [x] Write the routing functions: next round, stalemate, round limit, judge needed, decisions needed
-- [ ] Assemble the graph in `build_graph()` with retry policies and timeouts on agent nodes
-- [ ] Set the recursion limit from the charter's max rounds
-- [ ] Add `langgraph.json` and check the graph loads in Studio
-- [ ] Graph tests on fakes: clean settle, stalemate, round limit, judge path, blocker left open
+- [x] Assemble the graph in `build_graph()` with retry policies and timeouts on agent nodes
+- [x] Set the recursion limit from the charter's max rounds
+- [x] Add `langgraph.json` and check the graph loads in Studio
+- [x] Graph tests on fakes: clean settle, stalemate, round limit, judge path, blocker left open
 
 ## 6. Checkpointing and the decision step
 

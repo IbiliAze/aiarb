@@ -1,0 +1,52 @@
+# Run with max_rounds: 2. Each round settles something, so the debate never
+# stalls, but a disputed fact is still open at the limit. It becomes a task to
+# run before building: settled with open items, exit 1.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nPoll the queue every second."}
+  - schema: Critique
+    output:
+      objections:
+        - claim: Redis cannot take one poll per second per waiting user.
+          type: factual
+          severity: major
+          evidence: [{kind: code, path: config/redis.yml}]
+        - claim: Polling drains phone batteries.
+          type: design
+          severity: moderate
+          evidence: [{kind: plan, section: Queue}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nPoll every second."
+      answers:
+        - {id: OBJ-1, response: rebuttal, note: The cluster is sized for it.}
+        - {id: OBJ-2, response: rebuttal, note: The page is short-lived.}
+  - schema: Rulings
+    output:
+      rulings:
+        - {id: OBJ-1, verdict: dispute, note: Check the cluster size.}
+        - {id: OBJ-2, verdict: reject, note: Queues can last an hour.}
+  - schema: Verdict
+    contains: OBJ-1
+    output:
+      finding: critic_right
+      note: The cluster has one small node.
+      citations: [{kind: code, path: config/redis.yml, start_line: 2}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nPush updates over server-sent events."
+      answers:
+        - {id: OBJ-1, response: rebuttal, note: One node handles 100k ops/s.}
+        - {id: OBJ-2, response: fix, note: Switched to server-sent events.}
+  - schema: Rulings
+    output:
+      rulings:
+        - {id: OBJ-1, verdict: reject, note: Not at our peak.}
+        - id: OBJ-2
+          verdict: accept
+          note: No polling now.
+          resolution: {kind: plan_change, citations: [{kind: plan, section: Queue}]}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.6}
+  - {call: score, contains: OBJ-2, value: 0.3}
+  - {call: score, contains: OBJ-1, value: 0.55}

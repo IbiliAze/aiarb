@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Generic, Protocol, TypeVar
+from typing import Generic, Protocol, TypeVar, runtime_checkable
 
 from pydantic import BaseModel
 
@@ -43,6 +43,7 @@ class AgentResult(Generic[OutputT]):
     cost: Cost
 
 
+@runtime_checkable
 class CodeAgent(Protocol):
     async def run(self, request: AgentRequest[OutputT]) -> AgentResult[OutputT]:
         """Run one turn and return its validated output.

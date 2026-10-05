@@ -1,0 +1,43 @@
+# Run with max_rounds: 1. Three objections, one of each type, all rejected.
+# At the limit the fact becomes a task, the trade-off waits for the user, and
+# the design deadlock goes to the judge. Settled with open items, exit 1.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nAdmit users in batches of 500."}
+  - schema: Critique
+    output:
+      objections:
+        - claim: The checkout service cannot take 500 users at once.
+          type: factual
+          severity: major
+          evidence: [{kind: code, path: src/checkout.py}]
+        - claim: Small batches are fairer but make the queue slower.
+          type: trade_off
+          severity: moderate
+          evidence: [{kind: plan, section: Queue}]
+        - claim: The batch size belongs in config, not code.
+          type: design
+          severity: moderate
+          evidence: [{kind: plan, section: Queue}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nAdmit users in batches of 500."
+      answers:
+        - {id: OBJ-1, response: rebuttal, note: It took 800 in the last sale.}
+        - {id: OBJ-2, response: rebuttal, note: Speed matters more.}
+        - {id: OBJ-3, response: rebuttal, note: It never changes.}
+  - schema: Rulings
+    output:
+      rulings:
+        - {id: OBJ-1, verdict: reject, note: That sale had no payment step.}
+        - {id: OBJ-2, verdict: reject, note: The business has not said so.}
+        - {id: OBJ-3, verdict: reject, note: It will change during a sale.}
+  - schema: JudgeRuling
+    contains: OBJ-3
+    output: {favours: critic, ruling: Read the batch size from config.}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.6}
+  - {call: score, contains: OBJ-2, value: 0.4}
+  - {call: score, contains: OBJ-3, value: 0.3}
+  - {call: score, contains: OBJ-1, value: 0.6}
+  - {call: score, contains: OBJ-2, value: 0.4}

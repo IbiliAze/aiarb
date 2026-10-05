@@ -1,0 +1,7 @@
+{
+  "$schema": "https://langgra.ph/schema.json",
+  "dependencies": ["."],
+  "graphs": {
+    "aiarb": "./src/aiarb/graph/builder.py:build_graph"
+  }
+}

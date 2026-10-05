@@ -1,0 +1,34 @@
+# One objection fixed in the first round, one minor note. Settles: exit 0.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nKeep the queue in memory."}
+    cost: {usd: 2}
+  - schema: Critique
+    output:
+      objections:
+        - claim: An in-memory queue is lost on every deploy.
+          type: design
+          severity: major
+          evidence: [{kind: plan, section: Queue}]
+        - claim: The queue size constant has no comment.
+          type: design
+          severity: minor
+          evidence: [{kind: code, path: src/queue.py, start_line: 3}]
+    cost: {usd: 1}
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nKeep the queue in Redis, with a comment on its size."
+      answers:
+        - {id: OBJ-1, response: fix, note: Moved the queue to Redis.}
+    cost: {usd: 0.5}
+  - schema: Rulings
+    output:
+      rulings:
+        - id: OBJ-1
+          verdict: accept
+          note: Redis survives deploys.
+          resolution: {kind: plan_change, citations: [{kind: plan, section: Queue}]}
+    cost: {usd: 0.25}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.6, cost: {usd: 0.01}}
+  - {call: score, contains: OBJ-2, value: 0.1, cost: {usd: 0.01}}

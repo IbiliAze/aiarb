@@ -202,6 +202,8 @@ uv run pytest
 
 The full graph runs in tests on fake adapters, so the test suite makes no API calls.
 
+To see the graph in [LangGraph Studio](https://docs.langchain.com/langgraph-platform/langgraph-studio), run `uv run langgraph dev`.
+
 ## Acknowledgements
 
 Inspired by [ai-hedge-fund](https://github.com/virattt/ai-hedge-fund) by Virat Singh, which applies the same idea, a board of specialist agents reaching one decision, to investing.

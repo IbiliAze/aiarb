@@ -1,0 +1,25 @@
+# A blocker the verifier cannot settle from the code. It leaves the debate as a
+# task, but is still a blocker after rescoring: not ready, exit 2.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nStore queue places in the sessions table."}
+  - schema: Critique
+    output:
+      objections:
+        - claim: The sessions table locks on write and will stall checkout at peak.
+          type: factual
+          severity: blocker
+          evidence: [{kind: code, path: migrations/001_sessions.sql}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nStore queue places in the sessions table."
+      answers: [{id: OBJ-1, response: rebuttal, note: Writes are row-level.}]
+  - schema: Rulings
+    output:
+      rulings: [{id: OBJ-1, verdict: dispute, note: Check the table engine.}]
+  - schema: Verdict
+    contains: OBJ-1
+    output: {finding: unverifiable, note: "The engine is set at deploy time, not in the repo."}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.9}
+  - {call: score, contains: OBJ-1, value: 0.85}

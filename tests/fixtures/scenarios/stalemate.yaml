@@ -1,0 +1,31 @@
+# The critic rejects the same answer two rounds running, well inside the limit
+# of four. The judge rules early: settled, exit 0.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nOne queue per region."}
+  - schema: Critique
+    output:
+      objections:
+        - claim: Per-region queues let a user hold a place in two regions.
+          type: design
+          severity: major
+          evidence: [{kind: plan, section: Queue}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nOne queue per region."
+      answers: [{id: OBJ-1, response: rebuttal, note: Users are pinned to one region.}]
+  - schema: Rulings
+    output:
+      rulings: [{id: OBJ-1, verdict: reject, note: Pinning is by cookie and can be cleared.}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nOne queue per region."
+      answers: [{id: OBJ-1, response: rebuttal, note: Clearing cookies is rare.}]
+  - schema: Rulings
+    output:
+      rulings: [{id: OBJ-1, verdict: reject, note: Rare is not never.}]
+  - schema: JudgeRuling
+    contains: OBJ-1
+    output: {favours: critic, ruling: "Key the queue place on the account, not the cookie."}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.6}

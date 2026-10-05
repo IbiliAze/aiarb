@@ -9,7 +9,7 @@ otherwise, and a scripted fake in tests.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generic, Protocol, TypeVar
+from typing import TYPE_CHECKING, Generic, Protocol, TypeVar, runtime_checkable
 
 from aiarb.ports.calls import Cost
 
@@ -64,6 +64,7 @@ def check_options(options: Sequence[str]) -> None:
         raise ValueError("choice options cannot be blank")
 
 
+@runtime_checkable
 class Scorer(Protocol):
     """Each call raises RetryableCallError or FatalCallError when it has no answer."""
 

@@ -31,7 +31,7 @@ from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
 from aiarb.ports.scorer import Judgement, Level, check_levels, check_options
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Mapping, Sequence
     from pathlib import Path
 
 
@@ -195,7 +195,11 @@ class Scenario:
 
     @classmethod
     def from_yaml(cls, path: Path) -> Scenario:
-        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        return cls.from_data(yaml.safe_load(path.read_text(encoding="utf-8")) or {})
+
+    @classmethod
+    def from_data(cls, data: Mapping[str, Any]) -> Scenario:
+        """A scenario from parsed YAML, or from steps built in a test."""
         scenario = _ScenarioFile.model_validate(data)
         return cls(ScriptedCodeAgent(scenario.agent), ScriptedScorer(scenario.scorer))
 
