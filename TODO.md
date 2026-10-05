@@ -39,7 +39,7 @@
 ## 4. Ports and fakes
 
 - [x] Define the `CodeAgent` protocol: prompt, repo, model, schema, session in; typed result, session ID, cost out
-- [ ] Define the `Scorer` protocol: score, choice, yes/no, each with confidence
+- [x] Define the `Scorer` protocol: score, choice, yes/no, each with confidence
 - [ ] Write a scripted fake for each, driven by test fixtures
 
 ## 5. Graph on fakes

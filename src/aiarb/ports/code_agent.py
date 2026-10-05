@@ -12,27 +12,9 @@ from typing import Generic, Protocol, TypeVar
 
 from pydantic import BaseModel
 
+from aiarb.ports.calls import Cost
+
 OutputT = TypeVar("OutputT", bound=BaseModel)
-
-
-@dataclass(frozen=True)
-class Cost:
-    """What one or more agent calls spent."""
-
-    usd: float = 0.0
-    input_tokens: int = 0
-    output_tokens: int = 0
-
-    def __post_init__(self) -> None:
-        if self.usd < 0 or self.input_tokens < 0 or self.output_tokens < 0:
-            raise ValueError(f"cost cannot be negative: {self}")
-
-    def __add__(self, other: Cost) -> Cost:
-        return Cost(
-            usd=self.usd + other.usd,
-            input_tokens=self.input_tokens + other.input_tokens,
-            output_tokens=self.output_tokens + other.output_tokens,
-        )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -61,27 +43,10 @@ class AgentResult(Generic[OutputT]):
     cost: Cost
 
 
-class AgentError(Exception):
-    """An agent call that did not produce a valid result."""
-
-    def __init__(self, message: str, *, cost: Cost | None = None) -> None:
-        super().__init__(message)
-        self.cost = cost or Cost()
-        """What the call spent before it failed, so budgets stay accurate."""
-
-
-class RetryableAgentError(AgentError):
-    """Worth trying again: a timeout, rate limit, overload or dropped connection."""
-
-
-class FatalAgentError(AgentError):
-    """Trying again will not help: bad credentials, a missing install, or a spend cap."""
-
-
 class CodeAgent(Protocol):
     async def run(self, request: AgentRequest[OutputT]) -> AgentResult[OutputT]:
         """Run one turn and return its validated output.
 
-        Raises RetryableAgentError or FatalAgentError when there is no valid result.
+        Raises RetryableCallError or FatalCallError when there is no valid result.
         """
         ...
