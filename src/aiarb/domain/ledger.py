@@ -54,7 +54,7 @@ class Status(StrEnum):
     DISPUTED = "disputed"
     """A factual disagreement, waiting for the verifier to check the repo."""
     NOTED = "noted"
-    """Minor; passed to the planner as a note instead of being debated."""
+    """Minor, so noted instead of debated. The planner is shown it in any later round."""
     RESOLVED = "resolved"
     """Closed by a plan change or cited evidence."""
     RULED = "ruled"

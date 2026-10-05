@@ -121,9 +121,9 @@
 ## 14. Real-world proof
 
 - [ ] Run it on the ticketing app's waiting room feature and compare with the decision reached by hand
-- [ ] Run it on two other repos of different stacks
-- [ ] Fix what those runs expose, then record their fixtures as regression tests
-- [ ] Measure run time and cost and put typical figures in the README
+- [x] Run it on two other repos of different stacks
+- [x] Fix what those runs expose, then record their fixtures as regression tests
+- [x] Measure run time and cost and put typical figures in the README
 
 ## 15. Release
 

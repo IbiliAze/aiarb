@@ -171,7 +171,7 @@ Each run writes to `.aiarb/runs/<date>-<name>/`, which `.aiarb/.gitignore` keeps
 
 | File           | Contents                                                                                  |
 | -------------- | ----------------------------------------------------------------------------------------- |
-| `plan.md`      | The settled plan. Above it, what to settle before building and the rulings and decisions to apply; each is also noted under the plan sections it affects |
+| `plan.md`      | The settled plan. Above it, what to settle before building, the rulings and decisions to apply, and minor notes that were never debated; each is also noted under the plan sections it affects |
 | `ledger.md`    | Every objection in plain English: the problem, what would have happened in production, how it ended, and the full debate |
 | `decisions.md` | The trade-offs you decided, with each side's last word                                    |
 | `run.json`     | The full machine-readable record                                                          |
@@ -206,7 +206,17 @@ After you have new evidence or have made a decision, `aiarb resume` reopens only
 
 ## Cost and time
 
-A run is not quick. The first round has two models each exploring your repo in depth, which can take an hour apiece on a large codebase. Later rounds are much shorter, because they cover only the open items and each model resumes its earlier session. The CLI shows live progress and running cost throughout.
+Most of a run's time and cost is the planner's first draft, when it explores the repo. Later rounds are much shorter, because they cover only the open items and each model resumes its earlier session. The CLI shows live progress and running cost throughout.
+
+Measured on real repos, with Opus 5.5 as planner and Sonnet 5.5 in every other role:
+
+| Repo                          | Feature                                    | Rounds | Time   | Cost  |
+| ----------------------------- | ------------------------------------------ | ------ | ------ | ----- |
+| Next.js client, ~1,450 files  | Grow a venue map section on hover          | 0      | 2m 54s | $0.82 |
+| Spring Boot API, ~430 files   | Add a count endpoint with the list filters | 0      | 1m 29s | $0.68 |
+| Flutter app, ~350 files       | Show the scan count in a screen's title    | 0      | 1m 06s | $0.38 |
+
+These were small features: the critic's only objection each time was minor, so there was no debate. The planner's draft was 65–80% of the cost. Each round of debate adds a planner and a critic turn, which took one to two minutes and around $0.15 in smaller test runs. Expect a large feature on a large codebase to take much longer, and set `budget.per_run` to match.
 
 ## Is this a CAB?
 

@@ -1,0 +1,162 @@
+# Recorded from a real run on 2026-10-05: Opus 5.5 planning, Sonnet 5.5 for the
+# other roles. Feature: On the venue map in the web client, make a section grow slightly when the pointer is over it, with a short CSS transition, and shrink back when the pointer leaves.
+# The critic raised one minor objection, which skipped the debate, so the
+# planner never saw it: plan.md must list it as a minor note.
+agent:
+- schema: PlanDraft
+  output:
+    plan: |-
+      ## Summary
+
+      On the public stadium map (`StadiumMap` in `apps/client/src/components/Section/VenueSVG.tsx`), the sector under the pointer grows a little (about 4%) around its own centre, with a short CSS transition. It shrinks back the same way when the pointer leaves. Most of the work is CSS in `venueStyles` (`apps/client/src/utils/styles.ts`), plus a few lines in the effect that already raises the hovered sector. Those lines make sure the transition runs even though the sector's DOM node is moved.
+
+      ## Assumptions
+
+      - "Venue map in the web client" means the buyer-facing map (`publicView`, rendered from `apps/client/src/components/Event/SectionSelection.tsx:229`). The admin editor map (`publicView` false) and the cropped `SectorSnapshot` are left as they are. Public-only styling is already scoped to `.stadium-map[data-public='true']` (`apps/client/src/utils/styles.ts:143-147`).
+      - "Pointer over it" follows the map's own idea of the hovered sector, which is `hoverId`. That means a sector also grows when it gets keyboard focus (`onFocus={onSectorHover}`). It stays grown while the pointer moves onto its popover card, or across the pitch or gaps between sectors. It shrinks when the pointer leaves the map, moves to another sector, or Escape is pressed. This matches the existing accent outline (`data-selected`) and the popover, so all three move together. If the intent is strictly CSS `:hover`, see "Alternatives" under Approach.
+      - Sold-out or disabled sectors (`data-empty`) do not grow. The existing rule already removes the hover lift from them (`styles.ts:167-168`).
+      - "Slightly" = `scale: 1.04`, and "short" = the existing motion tokens `--dur-fast` (160ms) and `--ease-out` (`apps/client/src/theme/tokens.scss:22-23`). `.aliveCard` already uses these (`apps/client/src/styles/components/_misc.scss:116-120`).
+
+      ## Current state
+
+      - `apps/client/src/components/Section/VenueSVG.tsx`
+        - `onSectorHover` (l.88-91) sets `hoverId` on `mousemove`/`focus` over a `g[id]` sector.
+        - `onMapMouseLeave` and `onPopoverMouseLeave` (l.97-103) and Escape (l.79) clear it.
+        - The effect at l.117-155 tags each sector and sets `data-selected` on the hovered one (l.137). For the public map it then **moves the hovered `<g>` to the end of its parent** (`appendChild`, l.150-154) so its outline is not covered. When the hover changes it **moves it back** (`insertBefore`, l.145-149). The previous position is kept in `raisedRef`.
+        - The popover position (`anchor`, l.51-58) is measured from the sector's `getBoundingClientRect()` during render, before the effect runs.
+      - `apps/client/src/utils/styles.ts:148-185` (`venueStyles`, injected as a `<style>` inside the map)
+        - l.150: every `g[id]` has `transition: filter 120ms ease-in-out`.
+        - l.153-154: the public map's hover lift is `brightness(1.15) drop-shadow(...)` on `:hover`/`:focus-visible`.
+        - l.164-165: the public SVG is already `overflow: visible` with the outer clip-path removed, so a grown edge sector is not clipped. `.stadium-map__viewport` and `.selection-panel` do not clip either (`tokens.scss:615-617, 631-634`).
+        - l.178-184: snapshot rules. `SectorSnapshot.tsx:54` sets `data-selected` on its open sector, and its root carries `data-public='true' data-snapshot='true'` (l.99).
+      - `apps/client/src/svg/venue-a/venue.svg`: sectors are plain `<g id="Sector N">` with no `transform` attribute (no `g[id]` with `transform` in the file).
+      - `apps/client/src/theme/tokens.scss:1605-1618`: under `prefers-reduced-motion` all transitions are turned off globally. Hover transforms are also nulled for `.aliveCard` and `.club-seat`.
+      - `apps/client/src/components/Section/VenueSVG.test.tsx:135-149` tests the raise and lower order.
+
+      ## Approach
+
+      **Trigger: a dedicated `data-grown` attribute set in the existing raise/lower block, not `:hover`.** Moving a DOM node discards its computed style, so a CSS transition running on it is cancelled, and a node that has just been inserted has no "before" style to transition from. The map moves the hovered sector on every hover change (l.145-154). With a plain `:hover` rule:
+      - the shrink would snap whenever the pointer goes from one sector to the next (the old one is moved back), or leaves the map;
+      - the grow would be cut and restarted when the node is raised.
+
+      So the effect will:
+      1. **Lower:** move the old group back while it still has `data-grown`, force a style read (`getComputedStyle(group).scale`), then remove `data-grown`. The browser now sees a change from 1.04 to 1, and the shrink transition runs.
+      2. **Raise:** move the new group to the end, force a style read, then set `data-grown`. The grow transition runs.
+
+      Forcing the style read is the standard way to give a newly inserted node a starting style. It costs one style recalculation per hover change, not per mouse move: the block only does anything when `hoverId` changes (l.146, l.150).
+
+      A new attribute is used instead of reusing `data-selected` for three reasons:
+      - `SectorSnapshot` sets `data-selected` on its open sector (`SectorSnapshot.tsx:54`) and would grow it too.
+      - `data-selected` is set in the tagging loop (l.137), before the move, so it cannot be ordered around the move without restructuring that loop.
+      - The outline stays exactly as it is.
+
+      **CSS: the `scale` property, not `transform`.** A CSS `transform` replaces any `transform` attribute an SVG element carries. venue-a has none on its sectors, but venues are added by config (`getVenueSvg`), and the individual `scale` property composes with the attribute instead of replacing it. Add `transform-box: fill-box; transform-origin: center` so each sector grows about its own centre, not the SVG origin. The public `g[id]` transition has to list `filter 120ms ease-in-out` again alongside `scale`, or the brightness transition from l.150 would be lost.
+
+      **Reduced motion:** the global rule already removes the transition. Following the `.aliveCard`/`.club-seat` precedent, also turn the scale off with `scale: none` inside a `prefers-reduced-motion` block in `venueStyles`.
+
+      **Alternatives rejected**
+      - *`:hover` only (literal reading):* simplest CSS, but the transition breaks on sector-to-sector moves, as explained above. Getting it right would mean dropping the raise, and with it the whole-outline fix.
+      - *Draw the hovered sector as a `<use href>` overlay instead of moving the node:* this avoids the reinsertion issue. But it is a larger change to a working mechanism, and sector ids contain spaces and slashes (`Sector 13/VIP`), which makes fragment references awkward.
+      - *JS animation (Web Animations API):* more code for something CSS does.
+
+      ## Changes
+
+      1. **`apps/client/src/utils/styles.ts` (`venueStyles`)**, next to the public hover rule at l.153-154:
+         ```css
+         /* The hovered sector grows a little about its own centre. `scale` rather than `transform`, which would replace a transform attribute a venue's sector may carry */
+         .stadium-map[data-public='true'] svg[data-venue] g[id] { transform-box: fill-box; transform-origin: center; transition: filter 120ms ease-in-out, scale var(--dur-fast) var(--ease-out); }
+         .stadium-map[data-public='true'] svg[data-venue] g[data-grown]:not([data-empty]) { scale: 1.04; }
+         @media (prefers-reduced-motion: reduce) { .stadium-map[data-public='true'] svg[data-venue] g[data-grown] { scale: none; } }
+         ```
+         Update the doc comment above `venueStyles` (l.143-147) to say the hovered sector is tagged `data-grown`.
+      2. **`apps/client/src/components/Section/VenueSVG.tsx`**, in the raise block of the effect (l.141-154):
+         - When lowering: after `insertBefore`, read `getComputedStyle(raised.group).scale`, then `raised.group.removeAttribute('data-grown')`.
+         - When raising: after `appendChild`, read `getComputedStyle(group).scale`, then `group.setAttribute('data-grown', '')`.
+         - Extend the existing comment with one sentence: moving a node drops its computed style, so the style is read back before `data-grown` changes, which lets the grow and shrink transitions run.
+         - Mention `data-grown` in the component doc comment (l.22-29). No new state, props or deps. The admin map returns before this block (l.144), so it is untouched.
+      3. **`apps/client/src/components/Section/VenueSVG.test.tsx`**: tests as below.
+      4. **`CHANGELOG.rst`**: one buyer-facing line under 0.1.2, e.g. "On the stadium map, the sector under the pointer now grows a little."
+
+      ## Testing
+
+      - **Unit (Vitest + Testing Library, jsdom),** a new case next to the raise test at l.135. It uses the existing `SVG` fixture and `fireEvent`:
+        - `mouseMove` on `#A` gives `#A` `data-grown`.
+        - `mouseMove` on `#B`: `#B` has `data-grown`, and `#A` no longer has it and is back in place (order `ACDB`).
+        - Escape removes `data-grown` from every sector.
+        - `mouseMove` then `mouseLeave` of the viewport to `document.body` clears it.
+        - With `publicView` off, no sector ever gets `data-grown`.
+      - jsdom does not apply the stylesheet or run transitions, so the visual part is checked by hand in Chrome, Safari and Firefox on the event page:
+        - the sector grows smoothly on entry;
+        - moving sector to sector, the old one visibly shrinks while the new one grows;
+        - leaving the map shrinks it smoothly;
+        - Tab focus grows the sector;
+        - sold-out and disabled sectors do not grow;
+        - edge sectors are not clipped;
+        - the popover still sits just under the sector;
+        - with "reduce motion" switched on in the OS, there is no scale at all;
+        - the admin editor map and the seat-grid snapshot are unchanged.
+      - Run the client test suite and type-check as CI does (`.gitlab-ci.yml`).
+
+      ## Rollout and rollback
+
+      This is a client-only change with no data, API or flag. It ships with the next client deploy. To roll back, revert the commit. Removing the `scale` rule alone also disables the effect visually, because a stray `data-grown` attribute does nothing without it.
+
+      ## Risks
+
+      - **Transition still snaps in some browser:** this would show if the forced style read does not create a starting style. The fallback is the same sequence with the attribute change deferred to `requestAnimationFrame`. Check by hand in all three engines before merging.
+      - **Popover overlap:** `anchor` is measured before the sector grows, so the card's top edge can cover about 2% of the sector's height (around 1px on venue-a). This is acceptable. If it shows, add a small `top` offset.
+      - **Neighbour overlap while shrinking:** a lowered sector is drawn behind later sectors again during its 160ms shrink, so its grown rim is hidden at once while the rest shrinks. This is barely visible at 4%.
+      - **Stroke and label scale with the sector:** the 2.5 stroke becomes about 2.6. This is negligible. `vector-effect` is not needed.
+      - **A future venue SVG with nested transforms on sector groups:** `scale` composes with them, and `fill-box` keeps the origin on the sector. Check a new venue by hand when it is added.
+  cost:
+    usd: 0.674761
+- schema: Critique
+  output:
+    objections:
+    - claim: 'The grown sector is raised above its neighbours, so its hit area grows with it. For the
+        160ms transition and for as long as it stays hovered, the extra rim covers the edge of adjacent
+        sectors. The pointer there keeps hovering the grown sector, and a click or Enter selects it instead
+        of the neighbour the buyer is pointing at. The plan treats the growth only as a visual effect
+        and does not mention hit-testing. It could make the sector feel sticky and skew selection along
+        shared borders. Setting `pointer-events: none` on the scaled group won''t work, since it is the
+        hover target. A fix would be to hit-test against the unscaled geometry, or to accept the overlap
+        explicitly. The 4% figure and the manual checklist should cover this case.'
+      type: trade_off
+      severity: minor
+      evidence:
+      - kind: code
+        path: apps/client/src/components/Section/VenueSVG.tsx
+        start_line: 141
+        end_line: 154
+      - kind: plan
+        section: Risks
+        quote: Neighbour overlap while shrinking
+  cost:
+    usd: 0.089037
+- schema: Explanation
+  output:
+    summary: The plan makes the hovered sector on the public stadium map grow about 4% with a short CSS
+      transition. It uses a new data-grown attribute set around the code that already moves the hovered
+      sector to the front, and it skips sold-out sectors and respects reduced motion. The review raised
+      one minor objection, about the grown sector covering its neighbours' edges. It was passed to the
+      planner as a note and not debated, so nothing in the plan was changed because of it and nothing
+      is blocking.
+    items:
+    - id: OBJ-1
+      title: Grown sector may steal clicks from neighbours
+      problem: The hovered sector is drawn on top of its neighbours and grows, so its larger area overlaps
+        the edges of adjacent sectors. The plan treats the growth as purely visual and does not consider
+        that the overlap also changes where the pointer lands.
+      consequence: A buyer pointing at the edge of a neighbouring sector could keep hovering the grown
+        one. A click or Enter would then select the wrong sector, and the map could feel sticky along
+        shared borders.
+      outcome: Rated minor and noted, not debated. The objection suggests testing against the unscaled
+        shape, or accepting the overlap explicitly. It also says the 4% figure and the manual checklist
+        should cover this case.
+  cost:
+    usd: 0.041257
+scorer:
+- call: score
+  contains: OBJ-1
+  value: 0.2
+  confidence: 0.7

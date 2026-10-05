@@ -78,7 +78,7 @@ STATUS_LABELS: Mapping[Status, str] = {
     Status.OPEN: "open",
     Status.ANSWERED: "open, answered by the planner",
     Status.DISPUTED: "open, a disputed fact",
-    Status.NOTED: "noted: minor, passed to the planner without debate",
+    Status.NOTED: "noted: minor, not debated",
     Status.RESOLVED: "resolved",
     Status.RULED: "ruled by the judge, not agreed",
     Status.AWAITING_DECISION: "waiting for your decision",

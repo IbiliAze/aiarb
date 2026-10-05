@@ -1,0 +1,157 @@
+# Recorded from a real run on 2026-10-05: Opus 5.5 planning, Sonnet 5.5 for the
+# other roles. Feature: Add GET /api/reader/count, which returns the number of readers and takes the same filters as GET /api/reader.
+# The critic raised one minor objection, which skipped the debate, so the
+# planner never saw it: plan.md must list it as a minor note.
+agent:
+- schema: PlanDraft
+  output:
+    plan: |-
+      ## Summary
+
+      Add `GET /api/reader/count`. It returns `{"count": n}`, the number of readers that match the same filters `GET /api/reader` accepts: `username` (case-insensitive contains, trimmed), `venueId` and `inactive`. The endpoint follows the existing `GET /api/event/count` (`EventController.getEventCount`, `EventService.getEventCount`, `EventCountResponse`). It reuses `ReaderSpec` so the list and the count cannot apply different predicates.
+
+      ## Assumptions
+
+      - "The same filters" means the filtering parameters only: `username`, `venueId` and `inactive`. Paging and sorting (`page`, `size`, `sortBy`) mean nothing for a count, so the count endpoint does not accept them. If they are sent, binding ignores them and they cannot cause a 400.
+      - The response has the same shape as `EventCountResponse`: a bare `{"count": <long>}` with no `message` field. That keeps the two count endpoints consistent, even though `GetReadersResponse` has a `message`.
+      - The count needs the same authorization as the list: `ADMIN` or `READ_READER`. Reader devices (`READER`) are not admitted.
+
+      ## Current state
+
+      - `src/main/java/az/digitallife/acs/readers/internal/web/ReaderController.java:33-37`: `GET /api/reader` binds `@Valid @ModelAttribute ReaderRequestQueryParams` and calls `ReaderService.getReaders`. `GET /{id}` takes a `UUID` path variable.
+      - `src/main/java/az/digitallife/acs/readers/internal/web/dto/ReaderRequestQueryParams.java`: extends `common.dtos.RequestQueryParams` (`sortBy`, `page`, `size`). It adds `@SortBy(allowed = {"createdAt","updatedAt","username"}) sortBy`, `username = ""`, `Boolean inactive` and `UUID venueId`.
+      - `src/main/java/az/digitallife/acs/readers/internal/infrastructure/ReaderSpec.java:26-42`: `fromQueryParams(ReaderRequestQueryParams)` builds the conjunction of `hasUsername`, `hasVenueId` and `isInactive`, skipping filters that are blank or null.
+      - `src/main/java/az/digitallife/acs/readers/internal/application/ReaderService.java:53-68`: `getReaders` runs `readerRepository.findAll(spec, pageRequest)`. `ReaderRepository` already extends `JpaSpecificationExecutor<Reader>`, so `count(Specification)` is available.
+      - `src/main/java/az/digitallife/acs/readers/internal/web/ReaderSecurityRules.java:34`: `GET "/api/reader", "/api/reader/**"` requires `ADMIN` or `READ_READER`, so `/api/reader/count` is already covered. The only earlier GET matcher is `/api/reader/auth`, which does not overlap.
+      - Precedent: `events/internal/web/EventController.java:37-43`, `events/internal/application/EventService.java:64-72` (`eventRepository.count(spec)`), and `events/internal/web/dto/EventCountResponse.java` (`@Data @AllArgsConstructor`, `long count`). Tests: `EventControllerIT.countsEventsWithAndWithoutANameFilter` and `EventServiceTest.countingWith…`.
+
+      ## Approach
+
+      - **Filter DTO.** Add a small `ReaderFilters` interface with three getters (`getUsername()`, `getVenueId()`, `getInactive()`). Both `ReaderRequestQueryParams` and a new `ReaderCountQueryParams` implement it; Lombok `@Data` already generates those getters. Change `ReaderSpec.fromQueryParams` to take `ReaderFilters`.
+        - If someone later adds a filter to the interface, both DTOs fail to compile until they carry it, so the list and the count stay aligned.
+        - **Rejected: reuse `ReaderRequestQueryParams` for the count.** It is simplest, but Swagger would advertise `page`, `size` and `sortBy` on a count endpoint, and an invalid `sortBy` would return 400 on a request where sorting is meaningless.
+        - **Rejected: one inheritance chain.** `ReaderRequestQueryParams` already extends `RequestQueryParams`, and Java has single inheritance.
+        - **Rejected: explicit `@RequestParam`s like `EventController.getEventCount`.** That works for one filter. With three, it duplicates the list's binding and drifts silently.
+      - **Service.** `getReaderCount(ReaderCountQueryParams)` returns `new ReaderCountResponse(readerRepository.count(ReaderSpec.fromQueryParams(params)))`. This mirrors `EventService.getEventCount`: one `SELECT COUNT(*)` and no entity loading.
+      - **Routing.** Spring MVC prefers the literal `/count` over the `/{id}` pattern whatever the declaration order. Even so, declare the method right after `getReaders`, as `EventController` does, for readability.
+      - **Security.** No new matcher, because `/api/reader/**` already gives the right authorities. Only the comment changes so it names the new route, as `PLAN-event-selection.md` did for `/api/event/active`.
+
+      ## Changes
+
+      1. **`src/main/java/az/digitallife/acs/readers/internal/web/dto/ReaderFilters.java` (new):**
+         ```java
+         /** The filters GET /api/reader and GET /api/reader/count share; ReaderSpec reads them. */
+         public interface ReaderFilters {
+             String getUsername();
+             UUID getVenueId();
+             Boolean getInactive();
+         }
+         ```
+      2. **`ReaderRequestQueryParams.java`:** add `implements ReaderFilters`. Fields are unchanged.
+      3. **`src/main/java/az/digitallife/acs/readers/internal/web/dto/ReaderCountQueryParams.java` (new):**
+         - Annotated `@Data @NoArgsConstructor @AllArgsConstructor`, as the runbook's DTO convention says, and `implements ReaderFilters`.
+         - Fields: `String username = ""`, `Boolean inactive` and `UUID venueId`, with the same defaults as the list DTO.
+      4. **`src/main/java/az/digitallife/acs/readers/internal/web/dto/ReaderCountResponse.java` (new):** a copy of `EventCountResponse` (`@Data @AllArgsConstructor`, `private long count`).
+      5. **`ReaderSpec.java`:** change the parameter type of `fromQueryParams` from `ReaderRequestQueryParams` to `ReaderFilters` and update the import. The body is unchanged.
+      6. **`ReaderService.java`:** add after `getReaders`:
+         ```java
+         public ReaderCountResponse getReaderCount(ReaderCountQueryParams queryParams) {
+             return new ReaderCountResponse(readerRepository.count(ReaderSpec.fromQueryParams(queryParams)));
+         }
+         ```
+         It is covered by the class-level `@Transactional`, as `getEventCount` is.
+      7. **`ReaderController.java`:** add after `getReaders`:
+         ```java
+         @GetMapping("/count")
+         @Operation(summary = "Gets the number of readers, filtered as GET /api/reader is.")
+         public ReaderCountResponse getReaderCount(@Valid @ModelAttribute ReaderCountQueryParams queryParams) {
+             return readerService.getReaderCount(queryParams);
+         }
+         ```
+      8. **`ReaderSecurityRules.java:33`:** change the comment to `// Read readers: GET /api/reader, GET /api/reader/count and GET /api/reader/{id}`. The matcher is unchanged.
+
+      ## Data and migrations
+
+      None. The change is read-only and needs no new authority, so no permissions seed change is required.
+
+      ## Rollout and rollback
+
+      The endpoint is additive and goes out with the normal `deploy:backend` pipeline. No existing client changes behaviour, because `GET /api/reader` keeps its contract. The `ReaderSpec` signature change is internal to the module. Rollback is a revert of the commit.
+
+      ## Testing
+
+      **`ReaderServiceTest`** (unit, mocked `ReaderRepository`, in the style of `EventServiceTest.countingWith…`):
+      - With no filters, `getReaderCount` returns what `readerRepository.count(any(Specification.class))` returns.
+      - With filters set, it calls `count` once with a specification and never `findAll`.
+
+      **`ReaderControllerIT`**, in the "ReaderSpec" section. It uses unique usernames and the per-test venue so counts are exact on the shared database:
+      - **`countsReadersByEveryReaderSpecPredicate`:** create one reader at `venueId` with a unique username.
+        - `username` (padded and upper-cased) + `venueId` + `inactive=false` gives `$.count == 1`.
+        - `username` + `inactive=true` gives 0.
+        - `username` + a random `venueId` gives 0.
+        - `venueId` alone gives 1, because the venue is fresh in this test.
+        - No filters gives `>= 1`, the same lower-bound pattern as `EventControllerIT`.
+      - **`theCountMatchesTheListTotal`:** for one filter set, `GET /api/reader/count` `$.count` equals `GET /api/reader` `$.totalItems`. This pins the "same filters" requirement.
+      - **`countIgnoresPagingAndSorting`:** `sortBy=bogus:asc&page=5&size=1` returns 200 with the same count. This shows the endpoint takes filters only.
+      - **Authorization:** no token gives 401, `READ_VENUE` gives 403, and `READ_READER` gives 200. Together these show `/count` is not captured by `/{id}`, which would otherwise be a 400 UUID type mismatch.
+      - The existing `filtersTheListByEveryReaderSpecPredicate` keeps covering the list after the `ReaderSpec` signature change.
+
+      Run `./mvnw -B clean verify`.
+
+      ## Risks
+
+      - **A future filter added to only one DTO.** Putting the getter on `ReaderFilters` makes that a compile error. A filter added to `ReaderSpec` without the interface still shows up in `theCountMatchesTheListTotal` once that test is extended. The class comment on `ReaderFilters` names both endpoints.
+      - **Invalid `venueId` or `inactive` values.** The count fails binding exactly as the list does, because both use `@ModelAttribute` binding. Behaviour is the same, so nothing new is introduced.
+      - **Route shadowing.** If a later change put a broader `GET` matcher ahead of `/api/reader/**` in the security rules, the authorization ITs for `/count` would fail and show it.
+  cost:
+    usd: 0.537955
+- schema: Critique
+  output:
+    objections:
+    - claim: The ReaderFilters interface and the second DTO add machinery that guards little. The interface
+        only forces both DTOs to expose getters. It does not force ReaderSpec to apply a new filter, and
+        a filter added to ReaderSpec alone will not fail to compile. The plan's own Risks section admits
+        the remaining gap depends on a test being extended. A smaller change would let ReaderService build
+        the spec from the three values, or let the count reuse the existing DTO.
+      type: trade_off
+      severity: minor
+      evidence:
+      - kind: plan
+        section: Approach
+        quote: If someone later adds a filter to the interface, both DTOs fail to compile
+      - kind: plan
+        section: Risks
+        quote: A filter added to `ReaderSpec` without the interface still shows up in `theCountMatchesTheListTotal`
+          once that test is extended.
+      - kind: code
+        path: src/main/java/az/digitallife/acs/readers/internal/infrastructure/ReaderSpec.java
+        start_line: 26
+        end_line: 42
+  cost:
+    usd: 0.081849
+- schema: Explanation
+  output:
+    summary: The plan adds GET /api/reader/count, which returns the number of readers matching the same
+      username, venueId and inactive filters as the list endpoint. It shares the existing ReaderSpec so
+      the list and count use the same filtering. The review raised one minor objection about extra machinery.
+      It was passed to the planner as a note and not debated, so the plan was not changed. Nothing blocking
+      is open.
+    items:
+    - id: OBJ-1
+      title: Extra interface and DTO guard little
+      problem: The plan adds a ReaderFilters interface and a second query DTO so the list and count stay
+        aligned. The interface only forces both DTOs to expose the same getters. It does not force ReaderSpec
+        to apply a new filter, so a filter added to ReaderSpec alone would still compile.
+      consequence: Nothing would break in production. The plan would carry more code than it needs, and
+        the safety it promises would still depend on someone extending the list-versus-count test. The
+        plan's own Risks section admits this.
+      outcome: 'Noted as minor and passed to the planner without debate. The plan was not changed. The
+        objection suggests a smaller option: build the spec from the three values in the service, or reuse
+        the existing DTO.'
+  cost:
+    usd: 0.038615
+scorer:
+- call: score
+  contains: OBJ-1
+  value: 0.05
+  confidence: 0.9

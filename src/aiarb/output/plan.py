@@ -1,9 +1,13 @@
 """`plan.md`: the settled plan, with what it does not yet reflect attached.
 
 The plan text is the planner's last revision, unchanged. Above it go the run's
-status, the open items to settle before building, and the judge's rulings and
-the user's decisions, which the planner never revised the plan for. Each of
-those is also noted under every plan section it cites.
+status, the open items to settle before building, the judge's rulings and the
+user's decisions, which the planner never revised the plan for, and the minor
+notes, which were never debated. Each of those is also noted under every plan
+section it cites.
+
+A minor note reaches the planner only in a later round of the debate, and often
+there is none, so the plan may not reflect it at all.
 
 Citations are matched to the plan's real headings leniently, since the agents
 cite sections from memory: exact names first, then a quoted line found in a
@@ -96,9 +100,10 @@ def render(report: Report) -> str:
     items = list(report.ledger.values())
     to_settle = list(report.outcome.open_items)
     to_apply = [item for item in items if item.status in (Status.RULED, Status.DECIDED)]
+    minor = [item for item in items if item.status is Status.NOTED]
 
     notes: dict[int, list[str]] = {}
-    for item in [*to_settle, *to_apply]:
+    for item in [*to_settle, *to_apply, *minor]:
         for section in _cited_sections(item, plan, within):
             notes.setdefault(section.line, []).append(_note(item, report))
 
@@ -120,6 +125,12 @@ def render(report: Report) -> str:
             "## Rulings and decisions to apply\n\n"
             "The plan below was not revised for these.\n\n"
             + "\n".join(_applied(item, report) for item in to_apply)
+        )
+    if minor:
+        parts.append(
+            "## Minor notes\n\n"
+            "Rated minor, so not debated: the plan may not reflect them. Worth a look as you "
+            "build.\n\n" + "\n".join(_minor(item, report) for item in minor)
         )
     parts += ["---", "\n".join(body) if plan else "*No plan was written.*"]
     return "\n\n".join(parts) + "\n"
@@ -162,6 +173,10 @@ def _applied(item: Objection, report: Report) -> str:
     return f"- **{item.id}, your decision.** {item.claim} Decided: {decision(item)}"
 
 
+def _minor(item: Objection, report: Report) -> str:
+    return f"- **{item.id}: {report.title(item)}.** {item.claim}"
+
+
 def _note(item: Objection, report: Report) -> str:
     if item.status is Status.RULED:
         # Rulings run long, and an item can cite several sections: the ruling is
@@ -172,6 +187,8 @@ def _note(item: Objection, report: Report) -> str:
         )
     if item.status is Status.DECIDED:
         return f"**{item.id}, your decision:** {decision(item)}"
+    if item.status is Status.NOTED:
+        return f"**{item.id}, minor note:** {report.title(item)}. See *Minor notes*."
     return f"**{item.id}, open {item.severity}:** {report.title(item)}. See *Before you build*."
 
 

@@ -1,0 +1,123 @@
+# Recorded from a real run on 2026-10-05: Opus 5.5 planning, Sonnet 5.5 for the
+# other roles. Feature: Show how many scans are listed in the Scans screen's title, for example "Scans (42)".
+# The critic raised one minor objection, which skipped the debate, so the
+# planner never saw it: plan.md must list it as a minor note.
+agent:
+- schema: PlanDraft
+  output:
+    plan: |-
+      ## Summary
+
+      Show the number of loaded scans in the Scans screen's app bar title, for example `Scans (42)`. The count is `scans.length` from `ScansViewModel`, the same list the screen draws, so the title and the list always match. Only the screen changes, plus one new widget test.
+
+      ## Assumptions
+
+      - "How many scans are listed" means the length of the list the screen shows. `ScanLocalRepositoryImpl.getAll()` (`lib/features/scanner/data/scan_local_repository_impl.dart:23-27`) has no limit or paging, so this is also every scan stored on the reader.
+      - When there are no scans, the title stays plain `Scans` with no `(0)`. Two reasons. First, the view model starts with an empty list and has no loading flag (`lib/features/scanner/view_models/scans_view_model.dart:12-18`), so a `(0)` would briefly appear while scans are still loading, even on a reader that has some. Second, the empty state below already says "No scans yet" (`scans_screen.dart:39-43`). If you want `Scans (0)`, the reader can correct this; it is a one-line change.
+      - The count changes only when the list does: on first load and on pull-to-refresh (`scans_screen.dart:27,46`). This matches how the list behaves today.
+
+      ## Current state
+
+      - `lib/features/scanner/presentation/scans_screen.dart:31-57`: `build` returns `PageScaffold(title: 'Scans', body: ListenableBuilder(...))`. Only the body listens to `_viewModel`, so the title is fixed and never rebuilds.
+      - `lib/common/widgets/page_scaffold.dart`: `PageScaffold` takes `title` as a plain `String` and renders it as `Text(title)` in the `AppBar`.
+      - `lib/features/tickets/presentation/tickets_screen.dart:67-76` already handles a title that depends on view-model state. It wraps the whole `PageScaffold` in `ListenableBuilder(listenable: _viewModel, builder: (context, _) => PageScaffold(...))` and moves the body into a `_buildBody()` method.
+      - Tests: `test/features/scanner/view_models/scans_view_model_test.dart` covers the view model. The screen has no widget test. `test/features/dlq/presentation/dlq_screen_test.dart` shows how screen tests are set up here: register a factory on `getIt` using a fake repository from `test/support/fakes.dart`, then call `getIt.reset` in `tearDown` and `buildTheme(Brightness.light)`.
+
+      ## Approach
+
+      Copy the Tickets screen pattern. Move the `ListenableBuilder` up so it wraps `PageScaffold`, work out the title from `_viewModel.scans`, and move the existing body into `_buildBody()`.
+
+      Alternatives I rejected:
+      - **Change `PageScaffold.title` to a `Widget`, or add a `count` parameter.** This touches a shared widget used by six screens, for something one screen needs. The string API is enough.
+      - **Add a `count` or `title` getter to `ScansViewModel`.** `scans.length` is already public, and other view models do not format titles. Keeping the format in the screen matches `tickets_screen.dart`, where the screen builds `subtitle` from view-model state.
+      - **Add an `isLoaded` flag so the title can show `(0)` honestly.** This adds state only to tell "loading" apart from "empty", and hiding the count at zero already solves that (see Assumptions).
+
+      Rebuilding the whole scaffold on each notify is fine. `ScansViewModel` notifies once per `load()`.
+
+      ## Changes
+
+      1. `lib/features/scanner/presentation/scans_screen.dart`
+         - `build` returns `ListenableBuilder(listenable: _viewModel, builder: (context, _) => PageScaffold(title: _title(_viewModel.scans.length), body: _buildBody()))`.
+         - Add `String _title(int count) => count == 0 ? 'Scans' : 'Scans ($count)';`.
+         - Add `Widget _buildBody()`, holding the current builder body unchanged: the `EmptyState` when the list is empty, otherwise the `RefreshIndicator` with the `ListView.separated`.
+         - No new imports are needed.
+      2. `test/features/scanner/presentation/scans_screen_test.dart` (new), described under Testing.
+
+      ## Data and migrations
+
+      None.
+
+      ## Rollout and rollback
+
+      This ships with the next app build through the existing pipelines. To roll back, revert the commit.
+
+      ## Testing
+
+      New widget test `test/features/scanner/presentation/scans_screen_test.dart`, set up like `dlq_screen_test.dart`:
+      - `setUp`: create a `CollectingScanLocalRepository` from `test/support/fakes.dart` (the view-model test already uses it), then `getIt.registerFactory(() => ScansViewModel(repository))`. `tearDown(getIt.reset)`.
+      - To pump the screen: `MaterialApp(theme: buildTheme(Brightness.light), home: const ScansScreen())`, then `pumpAndSettle`. The screen does no navigation, so it doesn't need a router.
+      - Cases:
+        - Insert three `ScanRecord`s (built the same way as in `scans_view_model_test.dart:9-14`), then expect `find.text('Scans (3)')` to find one widget.
+        - With no scans, expect `find.text('Scans')` to find one widget and `find.textContaining('(')` to find nothing in the `AppBar`, and the "No scans yet" empty state to show.
+        - Insert one more record, then drag down to refresh (or call `load()` through a fling on the list) and pump. Expect the title to change from `Scans (1)` to `Scans (2)`. This shows the title rebuilds with the list.
+
+      CI already runs `flutter analyze` and `tool/coverage.sh` (`.github/workflows/test.yml`), and the new test file needs no changes to them.
+
+      ## Risks
+
+      - Moving the body into `_buildBody()` could change behaviour by accident, for example by losing the `RefreshIndicator`. The refresh test case covers this.
+      - Long titles: `Scans (12345)` is still short, and the `AppBar` would truncate it anyway. Low risk.
+      - If paging or a row limit is ever added to `getAll()`, the title would show the page count rather than the total. The Tickets screen solved that with a separate total (`TicketCountLine(_viewModel.totalCount)`, `tickets_screen.dart:98-103`), and the same would be needed here at that point.
+  cost:
+    usd: 0.255225
+- schema: Critique
+  output:
+    objections:
+    - claim: The refresh test case probably won't work as written. The list is a ListView.separated with
+        the default physics and no AlwaysScrollableScrollPhysics, and the test starts with only 1 or 2
+        short rows. On the Android default platform that ListView can't overscroll, so RefreshIndicator
+        never fires onRefresh and the title never changes from Scans (1) to Scans (2). The empty state
+        has no scrollable at all, so refreshing from it is impossible too. The plan hedges with 'or call
+        load() through a fling', which isn't a deterministic way to trigger it. The test should call the
+        view model's load() directly (e.g. via getIt-created instance) or set AlwaysScrollableScrollPhysics
+        on the list.
+      type: factual
+      severity: minor
+      evidence:
+      - kind: code
+        path: lib/features/scanner/presentation/scans_screen.dart
+        start_line: 45
+        end_line: 52
+      - kind: plan
+        section: Testing
+        quote: drag down to refresh (or call `load()` through a fling on the list)
+  cost:
+    usd: 0.0503
+- schema: Explanation
+  output:
+    summary: The plan adds the scan count to the Scans screen title, for example "Scans (42)". It does
+      this by wrapping the whole scaffold in a listener, the same way the Tickets screen does. The title
+      stays plain "Scans" when the list is empty. The review raised one minor objection, about the refresh
+      test. It was passed to the planner as a note and not debated, so nothing in the plan was changed
+      because of it. Nothing is blocking.
+    items:
+    - id: OBJ-1
+      title: Refresh test likely can't trigger a refresh
+      problem: The plan's test drags the list down to refresh it and expects the title to change from
+        "Scans (1)" to "Scans (2)". With only one or two short rows and default scroll behavior, the list
+        can't be pulled down on Android. The pull-to-refresh never fires. The empty state has no scrollable
+        list at all. The plan's fallback, calling load() "through a fling", isn't a reliable way to trigger
+        it either.
+      consequence: The feature itself would work in production. The test would fail, or never prove that
+        the title updates when the list changes, so the check meant to catch the body-move regression
+        would not do its job.
+      outcome: Noted as minor and passed to the planner without debate. The record suggests the test should
+        call the view model's load() directly, or the list should use always-scrollable scroll physics.
+        The record does not show the plan being revised to do either.
+  cost:
+    usd: 0.045839
+scorer:
+- call: score
+  contains: OBJ-1
+  value: 0.15
+  confidence: 0.8

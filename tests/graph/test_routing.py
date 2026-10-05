@@ -69,7 +69,7 @@ def raised(id: str, type: ObjectionType = ObjectionType.DESIGN) -> Objection:
 
 
 def noted(item: Objection) -> Objection:
-    """Scored minor at triage and passed on as a note."""
+    """Scored minor at triage and noted instead of debated."""
     item = item.rescore(Severity.MINOR, round=0, note="Scored 0.10.")
     return item.transition(Status.NOTED, actor=Actor.SYSTEM, round=0, note="Minor.")
 

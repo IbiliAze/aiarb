@@ -33,7 +33,7 @@ _STATUS_MEANINGS = {
     Status.OPEN: "open: still being debated",
     Status.ANSWERED: "answered: the planner has answered, the critic has not yet ruled",
     Status.DISPUTED: "disputed: a fact the verifier has yet to check",
-    Status.NOTED: "noted: minor, passed to the planner as a note and not debated",
+    Status.NOTED: "noted: minor, not debated; shown to the planner as a note",
     Status.RESOLVED: "resolved: settled by a plan change or cited evidence",
     Status.RULED: "ruled: the debate deadlocked and the judge decided it",
     Status.AWAITING_DECISION: "awaiting decision: a trade-off left for the user",

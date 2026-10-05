@@ -93,7 +93,19 @@ class TestRender:
             "> **OBJ-3, ruled by the judge:** Title of OBJ-3. See *Rulings and decisions to apply*."
             in under_summary
         )
-        assert "OBJ-5" not in text, "minor notes went to the planner"
+
+    def test_lists_minor_notes_the_plan_may_not_reflect(self) -> None:
+        # A minor note reaches the planner only in a later round, which often
+        # never comes: here the debate had none after it.
+        text = plan.render(report(*EVERY_ENDING))
+
+        notes = text.split("## Minor notes")[1].split("---")[0]
+        assert "Rated minor, so not debated: the plan may not reflect them." in notes
+        assert "- **OBJ-5: Title of OBJ-5.** The flag has no name." in notes
+        assert text.index("## Rulings and decisions to apply") < text.index("## Minor notes")
+
+    def test_has_no_minor_notes_section_without_minor_notes(self) -> None:
+        assert "## Minor notes" not in plan.render(report(DEFERRED))
 
     def test_lists_what_to_settle_first_then_what_to_apply(self) -> None:
         text = plan.render(report(*EVERY_ENDING))

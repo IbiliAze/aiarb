@@ -43,7 +43,7 @@ async def triage(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
                 Status.NOTED,
                 actor=Actor.SYSTEM,
                 round=state["round"],
-                note="Minor: passed to the planner as a note instead of being debated.",
+                note="Minor: noted instead of debated.",
             )
         updated[scored.id] = scored
     return {
