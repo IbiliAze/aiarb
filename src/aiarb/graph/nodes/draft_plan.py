@@ -17,7 +17,7 @@ async def draft_plan(state: RunState, runtime: Runtime[RunContext]) -> StateUpda
     """The planner drafts the plan, unless the user brought one to critique."""
     if state["given_plans"]:
         return {"plan": "\n\n---\n\n".join(state["given_plans"])}
-    result = await ask(runtime, "planner", prompts.draft(state), PlanDraft)
+    result = await ask(runtime, "planner", prompts.draft(state, runtime.context.charter), PlanDraft)
     return {
         "plan": result.output.plan,
         "costs": {"planner": result.cost},

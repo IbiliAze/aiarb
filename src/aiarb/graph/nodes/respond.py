@@ -24,7 +24,7 @@ async def respond(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     result = await ask(
         runtime,
         "planner",
-        prompts.respond(state, open_items, notes),
+        prompts.respond(state, open_items, notes, runtime.context.charter),
         Responses,
         session_id=state["sessions"].get("planner"),
     )

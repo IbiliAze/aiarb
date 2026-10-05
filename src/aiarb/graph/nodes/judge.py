@@ -43,7 +43,10 @@ async def judge(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
             )
     deadlocked = [item for item in leftovers if item.type is ObjectionType.DESIGN]
     results = await asyncio.gather(
-        *(ask(runtime, "judge", prompts.judge(state, item), JudgeRuling) for item in deadlocked)
+        *(
+            ask(runtime, "judge", prompts.judge(state, item, runtime.context.charter), JudgeRuling)
+            for item in deadlocked
+        )
     )
     for item, result in zip(deadlocked, results, strict=True):
         ruling = result.output

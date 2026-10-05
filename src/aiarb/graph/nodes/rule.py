@@ -24,7 +24,7 @@ async def rule(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     result = await ask(
         runtime,
         "critic",
-        prompts.rule(state, answered),
+        prompts.rule(state, answered, runtime.context.charter),
         Rulings,
         session_id=state["sessions"].get("critic"),
     )

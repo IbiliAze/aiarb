@@ -80,10 +80,10 @@
 ## 9. Prompts and schemas
 
 - [x] Write the JSON schema for each role's output
-- [ ] Write the planner prompts: draft, and respond to objections
-- [ ] Write the critic prompts: raise objections, and rule on responses
-- [ ] Write the verifier, judge and explainer prompts
-- [ ] Run each role alone on a fixture repo and check the output validates
+- [x] Write the planner prompts: draft, and respond to objections
+- [x] Write the critic prompts: raise objections, and rule on responses
+- [x] Write the verifier, judge and explainer prompts
+- [x] Run each role alone on a fixture repo and check the output validates
 
 ## 10. Scoring
 

@@ -28,7 +28,7 @@ async def verify(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     if not disputed:
         return {}
     results = await asyncio.gather(
-        *(ask(runtime, "verifier", prompts.verify(item), Verdict) for item in disputed)
+        *(ask(runtime, "verifier", prompts.verify(state, item), Verdict) for item in disputed)
     )
     settled = {}
     for item, result in zip(disputed, results, strict=True):

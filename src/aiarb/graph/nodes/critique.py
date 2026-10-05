@@ -19,7 +19,7 @@ async def critique(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate
     result = await ask(
         runtime,
         "critic",
-        prompts.critique(state),
+        prompts.critique(state, runtime.context.charter),
         Critique,
         session_id=state["sessions"].get("critic"),
     )

@@ -1,86 +1,140 @@
 """The text each role is given.
 
-Minimal for now: each prompt carries what the role needs and names objections by
-id, which is also what the scripted fakes match on. Section 9 replaces these
-with the real prompts.
+Every prompt starts with the role's brief, from `aiarb/prompts/<role>.md`: who the
+role is, how it works, and the rules of the debate. Then comes this turn's task,
+then what the task works on, each in its own XML tag. The brief is sent on every
+turn, not only a session's first: a session that has been lost restarts from the
+latest prompt alone.
+
+Objections are always named by id, which is what scripted fakes match on.
 """
 
 from __future__ import annotations
 
+from functools import cache
+from importlib.resources import files
 from typing import TYPE_CHECKING
 
-from aiarb.domain.ledger import CodeRef, Ref
+from aiarb.domain.ledger import CodeRef, Ref, Status
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
 
+    from aiarb.config.charter import Charter
     from aiarb.domain.ledger import Objection
-    from aiarb.graph.state import RunState
+    from aiarb.graph.state import Role, RunState
+
+_STATUS_MEANINGS = {
+    Status.OPEN: "open: still being debated",
+    Status.ANSWERED: "answered: the planner has answered, the critic has not yet ruled",
+    Status.DISPUTED: "disputed: a fact the verifier has yet to check",
+    Status.NOTED: "noted: minor, passed to the planner as a note and not debated",
+    Status.RESOLVED: "resolved: settled by a plan change or cited evidence",
+    Status.RULED: "ruled: the debate deadlocked and the judge decided it",
+    Status.AWAITING_DECISION: "awaiting decision: a trade-off left for the user",
+    Status.DECIDED: "decided: a trade-off the user ruled on",
+    Status.DEFERRED: "deferred: the code cannot settle it; a task to do before building",
+}
 
 
-def draft(state: RunState) -> str:
+@cache
+def brief(role: Role) -> str:
+    """The role's standing instructions."""
+    return (files("aiarb") / "prompts" / f"{role}.md").read_text(encoding="utf-8").strip()
+
+
+def draft(state: RunState, charter: Charter) -> str:
     feature = state["feature"] or (
-        "Not given. Infer the most valuable next change from the repo, and state that "
-        "assumption at the top of the plan."
+        "Not given. Work out the most valuable next change from the repo, and state that "
+        "as your first assumption."
     )
-    return _join(
-        "You are the planner. Draft an implementation plan for this repo.",
-        f"Feature:\n{feature}",
-        f"Repo facts:\n{state['facts']}",
-        "Write the plan in Markdown, with a heading for each section.",
-    )
-
-
-def critique(state: RunState) -> str:
-    return _join(
-        "You are the critic. Find what is wrong with this plan for this repo.",
-        f"Plan:\n{state['plan']}",
-        f"Repo facts:\n{state['facts']}",
-        "Every objection must cite the code or the plan section it concerns.",
+    return _prompt(
+        "planner",
+        "Draft the plan for the feature below. Read the code it touches first.",
+        feature=feature,
+        charter=_charter(charter),
+        repo_facts=state["facts"],
     )
 
 
-def respond(state: RunState, items: Iterable[Objection], notes: Iterable[Objection]) -> str:
+def critique(state: RunState, charter: Charter) -> str:
+    source = (
+        "The user wrote this plan outside the review, so it may not follow the usual sections. "
+        if state["given_plans"]
+        else ""
+    )
+    return _prompt(
+        "critic",
+        f"Raise your objections to the plan below. {source}Read the code it touches, and "
+        "check what it says about the codebase against the files.",
+        feature=state["feature"] or "Not given: the plan states what it assumed.",
+        plan=state["plan"],
+        charter=_charter(charter),
+        repo_facts=state["facts"],
+    )
+
+
+def respond(
+    state: RunState, items: Iterable[Objection], notes: Iterable[Objection], charter: Charter
+) -> str:
     minor = _describe_all(notes)
-    return _join(
-        "You are the planner. Answer every objection below by id: fix the plan, or rebut "
-        "the objection with evidence. Agreeing without changing the plan is not an answer.",
-        f"Current plan:\n{state['plan']}",
-        f"Objections:\n{_describe_all(items)}",
-        *(
-            [f"Minor notes, to apply where worthwhile (no answer needed):\n{minor}"]
-            if minor
-            else []
-        ),
-        "Return the whole revised plan, and one answer per objection.",
+    return _prompt(
+        "planner",
+        f"Round {state['round'] + 1}. Answer every objection below by id, with a fix or a "
+        "rebuttal, and return the whole revised plan. Each objection's history shows what "
+        "has been said about it so far."
+        + (" Minor notes follow the objections: apply them where worthwhile." if minor else ""),
+        plan=state["plan"],
+        objections=_describe_all(items),
+        **({"minor_notes": minor} if minor else {}),
+        charter=_charter(charter),
     )
 
 
-def rule(state: RunState, items: Iterable[Objection]) -> str:
-    return _join(
-        "You are the critic. Rule on the planner's answer to each objection below, by id: "
-        "accept it with the plan change or evidence that settles it, reject it, or dispute "
-        "a factual claim so the verifier can check the repo.",
-        f"Current plan:\n{state['plan']}",
-        f"Objections and answers:\n{_describe_all(items)}",
+def rule(state: RunState, items: Iterable[Objection], charter: Charter) -> str:
+    return _prompt(
+        "critic",
+        f"Round {state['round']}. The planner has answered the objections below; the last "
+        "entry in each history is the answer. Rule on every one, by id, against the revised "
+        "plan below and the code. Rule only on these objections.",
+        plan=state["plan"],
+        objections=_describe_all(items),
+        charter=_charter(charter),
     )
 
 
-def verify(item: Objection) -> str:
-    return _join(
-        "You are the verifier. The planner and critic disagree on a fact about this repo. "
-        "Read the code and say who is right, citing what you found. If reading the code "
-        "cannot settle it, say it is unverifiable.",
-        f"Disputed objection:\n{describe(item)}",
+def verify(state: RunState, item: Objection) -> str:
+    return _prompt(
+        "verifier",
+        "Settle the disputed fact below by reading the code.",
+        question=item.history[-1].note,
+        objection=describe(item),
+        repo_facts=state["facts"],
     )
 
 
-def judge(state: RunState, item: Objection) -> str:
-    return _join(
-        "You are the judge. The planner and critic could not settle this objection within "
-        "the round limit. Decide which side is right and what the plan should do.",
-        f"Current plan:\n{state['plan']}",
-        f"Objection:\n{describe(item)}",
+def judge(state: RunState, item: Objection, charter: Charter) -> str:
+    return _prompt(
+        "judge",
+        f"Decide {item.id}, below. Its history holds both sides' arguments.",
+        objection=describe(item),
+        plan=state["plan"],
+        charter=_charter(charter),
+        repo_facts=state["facts"],
+    )
+
+
+def explain(state: RunState) -> str:
+    items = list(state["ledger"].values())
+    meanings = "\n".join(_STATUS_MEANINGS[status] for status in Status)
+    return _prompt(
+        "explainer",
+        "Explain every objection below, by id and in the order given, and sum up the review. "
+        "Each objection's status says how it ended.",
+        feature=state["feature"] or "Not given: the plan states what it assumed.",
+        plan=state["plan"],
+        objections=_describe_all(items) or "None were raised.",
+        statuses=meanings,
     )
 
 
@@ -94,7 +148,7 @@ def score(item: Objection) -> str:
 
 def describe(item: Objection) -> str:
     lines = [
-        f"{item.id} ({item.type}, {item.severity}): {item.claim}",
+        f"{item.id} ({item.type}, {item.severity}, {item.status}): {item.claim}",
         f"  Evidence: {_cite(item.evidence)}",
     ]
     lines += [
@@ -103,6 +157,23 @@ def describe(item: Objection) -> str:
         for event in item.history[1:]
     ]
     return "\n".join(lines)
+
+
+def _prompt(role: Role, task: str, **inputs: str) -> str:
+    tagged = [f"<{tag}>\n{text.strip()}\n</{tag}>" for tag, text in inputs.items()]
+    return _join(brief(role), f"# This turn\n\n{task}", *tagged)
+
+
+def _charter(charter: Charter) -> str:
+    lines: list[str] = []
+    if charter.priorities:
+        lines.append("Priorities, from 1 (matters a little) to 5 (matters most):")
+        ranked = sorted(charter.priorities.items(), key=lambda pair: -pair[1])
+        lines += [f"- {name.replace('_', ' ')}: {weight}" for name, weight in ranked]
+    if charter.constraints:
+        lines.append("Constraints every plan must keep to:")
+        lines += [f"- {constraint}" for constraint in charter.constraints]
+    return "\n".join(lines) or "No priorities or constraints are set: use sound judgement."
 
 
 def _describe_all(items: Iterable[Objection]) -> str:
