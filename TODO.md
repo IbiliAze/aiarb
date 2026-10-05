@@ -47,7 +47,7 @@
 - [x] Define the state schema with reducers for the ledger and cost totals
 - [x] Define the runtime context: charter plus the injected ports
 - [x] Write each node as a small function returning a state update
-- [ ] Write the routing functions: next round, stalemate, round limit, judge needed, decisions needed
+- [x] Write the routing functions: next round, stalemate, round limit, judge needed, decisions needed
 - [ ] Assemble the graph in `build_graph()` with retry policies and timeouts on agent nodes
 - [ ] Set the recursion limit from the charter's max rounds
 - [ ] Add `langgraph.json` and check the graph loads in Studio
