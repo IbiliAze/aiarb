@@ -33,7 +33,7 @@
 
 - [x] Model the charter in pydantic: models per role, max rounds, rubric weights, thresholds, budget caps
 - [x] Load and validate `.aiarb/charter.yaml`, with defaults when it's absent
-- [ ] Add settings for API keys from the environment
+- [x] Add settings for API keys from the environment
 - [ ] Test invalid charters produce clear errors
 
 ## 4. Ports and fakes
