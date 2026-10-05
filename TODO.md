@@ -55,11 +55,11 @@
 
 ## 6. Checkpointing and the decision step
 
-- [ ] Add the SQLite checkpointer under `.aiarb/runs/<run-id>/`
-- [ ] Use the run ID as the thread ID
-- [ ] Implement the decision node with `interrupt()`, passing the questions out
-- [ ] Test: run to the interrupt, reload from disk, resume with answers, finish
-- [ ] Test: kill a run mid-round and resume from the last checkpoint
+- [x] Add the SQLite checkpointer under `.aiarb/runs/<run-id>/`
+- [x] Use the run ID as the thread ID
+- [x] Implement the decision node with `interrupt()`, passing the questions out
+- [x] Test: run to the interrupt, reload from disk, resume with answers, finish
+- [x] Test: kill a run mid-round and resume from the last checkpoint
 
 ## 7. Repo scan
 

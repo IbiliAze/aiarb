@@ -1,0 +1,21 @@
+# Run with max_rounds: 1. A trade-off the planner and critic cannot settle goes
+# to the user. Once decided, nothing is open: settled, exit 0.
+agent:
+  - schema: PlanDraft
+    output: {plan: "# Queue\n\nAdmit users in batches of 500."}
+  - schema: Critique
+    output:
+      objections:
+        - claim: Small batches are fairer but make the queue slower.
+          type: trade_off
+          severity: moderate
+          evidence: [{kind: plan, section: Queue}]
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nAdmit users in batches of 500."
+      answers: [{id: OBJ-1, response: rebuttal, note: Speed matters more.}]
+  - schema: Rulings
+    output:
+      rulings: [{id: OBJ-1, verdict: reject, note: The business has not said so.}]
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.4}

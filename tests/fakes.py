@@ -31,7 +31,7 @@ from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
 from aiarb.ports.scorer import Judgement, Level, check_levels, check_options
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Mapping, Sequence
+    from collections.abc import Callable, Iterable, Mapping, Sequence
     from pathlib import Path
 
 
@@ -110,9 +110,11 @@ class _Script(Generic[StepT]):
 class ScriptedCodeAgent:
     """A CodeAgent that answers from a script and records every request."""
 
-    def __init__(self, steps: Sequence[AgentStep]) -> None:
+    def __init__(self, steps: Sequence[AgentStep], *, sessions: Iterable[str] = ()) -> None:
+        """`sessions` are ones issued before, as by an agent in a run that was
+        stopped and is now resumed."""
         self._script = _Script(steps)
-        self._sessions: set[str] = set()
+        self._sessions: set[str] = set(sessions)
         self.calls: list[AgentRequest[Any]] = []
 
     async def run(self, request: AgentRequest[OutputT]) -> AgentResult[OutputT]:

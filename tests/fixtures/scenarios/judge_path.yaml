@@ -1,6 +1,7 @@
 # Run with max_rounds: 1. Three objections, one of each type, all rejected.
-# At the limit the fact becomes a task, the trade-off waits for the user, and
-# the design deadlock goes to the judge. Settled with open items, exit 1.
+# At the limit the fact becomes a task, the trade-off goes to the user to
+# decide, and the design deadlock goes to the judge. The task is still open:
+# settled with open items, exit 1.
 agent:
   - schema: PlanDraft
     output: {plan: "# Queue\n\nAdmit users in batches of 500."}
@@ -40,4 +41,3 @@ scorer:
   - {call: score, contains: OBJ-2, value: 0.4}
   - {call: score, contains: OBJ-3, value: 0.3}
   - {call: score, contains: OBJ-1, value: 0.6}
-  - {call: score, contains: OBJ-2, value: 0.4}

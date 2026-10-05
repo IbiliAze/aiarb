@@ -1,12 +1,13 @@
 import asyncio
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import yaml
 from langchain_core.runnables import RunnableConfig
+from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.errors import GraphRecursionError, NodeTimeoutError
-from langgraph.types import RetryPolicy
+from langgraph.types import Command, RetryPolicy
 
 from aiarb.config.charter import Charter
 from aiarb.domain.ledger import Actor, Status
@@ -15,7 +16,7 @@ from aiarb.domain.scoring import Severity
 from aiarb.graph import builder
 from aiarb.graph.builder import TIMEOUTS, build_graph, recursion_limit, run_config
 from aiarb.graph.context import RunContext
-from aiarb.graph.state import RunState, initial_state, total_cost
+from aiarb.graph.state import RunState, checkpoint_serializer, initial_state, total_cost
 from aiarb.ports.calls import Cost, FatalCallError, RetryableCallError
 from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
 from tests.fakes import Scenario, ScriptedScorer
@@ -36,16 +37,22 @@ async def run(
     max_rounds: int = 4,
     retry_policy: RetryPolicy = NO_WAIT,
     config: RunnableConfig | None = None,
+    decisions: dict[str, str] | None = None,
 ) -> RunState:
+    """Run a scenario in memory, giving `decisions` if it pauses for them."""
     rules = charter(max_rounds)
     context = RunContext(charter=rules, repo=repo, agent=scenario.agent, scorer=scenario.scorer)
-    graph = build_graph(retry_policy=retry_policy)
-    final = await graph.ainvoke(
-        initial_state(feature="Add a virtual waiting room."),
-        context=context,
-        config=config or run_config(rules),
+    graph = build_graph(
+        checkpointer=InMemorySaver(serde=checkpoint_serializer()), retry_policy=retry_policy
     )
-    return final  # type: ignore[return-value]
+    config = config or run_config(rules, "test-run")
+    await graph.ainvoke(
+        initial_state(feature="Add a virtual waiting room."), config, context=context
+    )
+    if decisions is not None:
+        assert (await graph.aget_state(config)).interrupts, "the run did not pause"
+        await graph.ainvoke(Command(resume=decisions), config, context=context)
+    return cast("RunState", (await graph.aget_state(config)).values)
 
 
 def from_yaml(name: str) -> Scenario:
@@ -117,14 +124,17 @@ class TestScenarios:
     async def test_judge_path_hands_each_leftover_on_by_type(self, tmp_path: Path) -> None:
         scenario = from_yaml("judge_path")
 
-        final = await run(tmp_path, scenario, max_rounds=1)
+        final = await run(
+            tmp_path, scenario, max_rounds=1, decisions={"OBJ-2": "Speed matters more."}
+        )
 
         scenario.assert_finished()
         assert statuses(final) == {
             "OBJ-1": Status.DEFERRED,
-            "OBJ-2": Status.AWAITING_DECISION,
+            "OBJ-2": Status.DECIDED,
             "OBJ-3": Status.RULED,
         }
+        assert final["ledger"]["OBJ-2"].history[-1].note == "Decided: Speed matters more."
         assert [request.schema.__name__ for request in scenario.agent.calls].count(
             "JudgeRuling"
         ) == 1
@@ -143,10 +153,11 @@ class TestScenarios:
         assert final["status"].exit_code == 2
 
 
-def worst_case(rounds: int) -> Scenario:
-    """Every step a run can take: a dispute verified each round, then the judge
-    and the decision step. One other item closes in round 2, so the debate keeps
-    making progress and runs to the limit instead of stalling."""
+def worst_case(rounds: int, type: str) -> Scenario:
+    """A dispute verified every round, then the judge. A design objection is
+    ruled and the run finishes, which is the most steps one invocation can take;
+    a trade-off pauses the run for a decision instead. One other item closes in
+    round 2, so the debate runs to the limit instead of stalling."""
     resolution = {"kind": "plan_change", "citations": [{"kind": "plan", "section": "Queue"}]}
     agent: list[dict[str, Any]] = [
         {"schema": "PlanDraft", "output": {"plan": "# Queue"}},
@@ -156,7 +167,7 @@ def worst_case(rounds: int) -> Scenario:
                 "objections": [
                     {
                         "claim": f"Claim {n}.",
-                        "type": "trade_off",
+                        "type": type,
                         "severity": "major",
                         "evidence": [{"kind": "plan", "section": "Queue"}],
                     }
@@ -180,36 +191,51 @@ def worst_case(rounds: int) -> Scenario:
             {"schema": "Rulings", "output": {"rulings": rulings}},
             {"schema": "Verdict", "output": {"finding": "critic_right", "note": "As claimed."}},
         ]
+    if type == "design":
+        agent.append({"schema": "JudgeRuling", "output": {"favours": "critic", "ruling": "Do."}})
     scorer = [
         {"call": "score", "contains": "OBJ-1", "value": 0.6},
         {"call": "score", "contains": "OBJ-2", "value": 0.6},
-        {"call": "score", "contains": "OBJ-1", "value": 0.6},
     ]
     return Scenario.from_data({"agent": agent, "scorer": scorer})
 
 
 class TestRecursionLimit:
-    async def test_the_longest_run_fits_the_limit_exactly(self, tmp_path: Path) -> None:
-        scenario = worst_case(3)
+    @pytest.mark.parametrize(
+        ("type", "outcome"),
+        [
+            pytest.param("design", Status.RULED, id="judged, then finished"),
+            pytest.param("trade_off", Status.AWAITING_DECISION, id="paused for a decision"),
+        ],
+    )
+    async def test_the_longest_invocations_fit_the_limit(
+        self, tmp_path: Path, type: str, outcome: Status
+    ) -> None:
+        scenario = worst_case(3, type)
 
         final = await run(tmp_path, scenario, max_rounds=3)
 
         scenario.assert_finished()
         assert final["round"] == 3
-        assert statuses(final) == {"OBJ-1": Status.AWAITING_DECISION, "OBJ-2": Status.RESOLVED}
+        assert statuses(final) == {"OBJ-1": outcome, "OBJ-2": Status.RESOLVED}
 
-    async def test_one_step_fewer_is_not_enough(self, tmp_path: Path) -> None:
+    async def test_the_limit_is_exact(self, tmp_path: Path) -> None:
+        config = run_config(charter(max_rounds=3), "test-run")
+        config["recursion_limit"] = recursion_limit(3) - 1
+
         with pytest.raises(GraphRecursionError):
-            await run(
-                tmp_path,
-                worst_case(3),
-                max_rounds=3,
-                config={"recursion_limit": recursion_limit(3) - 1},
-            )
+            await run(tmp_path, worst_case(3, "design"), max_rounds=3, config=config)
 
     def test_the_limit_comes_from_the_charters_max_rounds(self) -> None:
-        assert run_config(charter(max_rounds=6)) == {"recursion_limit": recursion_limit(6)}
+        config = run_config(charter(max_rounds=6), "2026-10-05-queue")
+
+        assert config["recursion_limit"] == recursion_limit(6)
         assert recursion_limit(6) - recursion_limit(5) == 3
+
+    def test_the_run_id_is_the_thread_id(self) -> None:
+        config = run_config(charter(), "2026-10-05-queue")
+
+        assert config["configurable"] == {"thread_id": "2026-10-05-queue"}
 
 
 def failing_then(error: str, *, message: str = "overloaded") -> Scenario:

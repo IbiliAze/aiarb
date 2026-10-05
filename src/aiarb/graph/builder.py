@@ -16,7 +16,7 @@ limit. The routers in `routing.py` decide every branch.
 from __future__ import annotations
 
 from datetime import timedelta
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from langgraph.graph import END, START, StateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.types import RetryPolicy
@@ -30,6 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from langchain_core.runnables import RunnableConfig
+    from langgraph.checkpoint.base import BaseCheckpointSaver
     from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
 
     from aiarb.config.charter import Charter
@@ -65,9 +66,10 @@ can take an hour on a large codebase. Later turns resume those sessions and
 cover only the open items.
 """
 
-_FIXED_STEPS = 8
-"""Steps every run can take outside the rounds: scan, draft_plan, critique,
-triage, judge, decide, rescore and finalise."""
+_FIXED_STEPS = 7
+"""The most steps outside the rounds in one invocation: scan, draft_plan,
+critique, triage, judge, rescore and finalise. A run that needs decisions pauses
+at decide instead, and is finished by a later invocation with its own count."""
 
 _STEPS_PER_ROUND = 3
 """respond, rule and verify."""
@@ -77,9 +79,15 @@ _INPUT_STEP = 1
 
 
 def build_graph(
-    *, retry_policy: RetryPolicy = AGENT_RETRY
+    *,
+    checkpointer: BaseCheckpointSaver[Any] | None = None,
+    retry_policy: RetryPolicy = AGENT_RETRY,
 ) -> CompiledStateGraph[RunState, RunContext, RunState, RunState]:
-    """The debate graph, ready to run with a `RunContext`."""
+    """The debate graph, ready to run with a `RunContext`.
+
+    A run needs a checkpointer to pause for the user's decisions. Studio brings
+    its own.
+    """
     graph = StateGraph(RunState, context_schema=RunContext)
 
     graph.add_node("scan", nodes.scan)  # pyright: ignore[reportUnknownMemberType]
@@ -111,11 +119,11 @@ def build_graph(
     graph.add_edge("rescore", "finalise")
     graph.add_edge("finalise", END)
 
-    return graph.compile(name="aiarb")  # pyright: ignore[reportUnknownMemberType]
+    return graph.compile(checkpointer=checkpointer, name="aiarb")  # pyright: ignore[reportUnknownMemberType]
 
 
 def recursion_limit(max_rounds: int) -> int:
-    """The most steps a run can take: every fixed step, and a full round each time.
+    """The most steps one invocation of a run can take.
 
     The routers already stop the debate at the round limit. This is the backstop
     if they ever fail to, so it is exact rather than generous.
@@ -123,6 +131,10 @@ def recursion_limit(max_rounds: int) -> int:
     return _INPUT_STEP + _FIXED_STEPS + _STEPS_PER_ROUND * max_rounds
 
 
-def run_config(charter: Charter) -> RunnableConfig:
-    """The config to invoke the graph with for a run under this charter."""
-    return {"recursion_limit": recursion_limit(charter.debate.max_rounds)}
+def run_config(charter: Charter, run_id: str) -> RunnableConfig:
+    """The config to invoke the graph with: the run is the thread its checkpoints
+    belong to, and its step limit comes from the charter."""
+    return {
+        "recursion_limit": recursion_limit(charter.debate.max_rounds),
+        "configurable": {"thread_id": run_id},
+    }
