@@ -90,6 +90,7 @@ class TestDecisions:
         ports.assert_finished()
         assert outcome.code == 0
         assert outcome.json["status"] == "settled"
+        assert "Apply your decision on OBJ-1 as you build" in outcome.stderr
         decisions = repo / ".aiarb" / "runs" / RUN_ID / "decisions.md"
         assert "Fairness first." in decisions.read_text()
 

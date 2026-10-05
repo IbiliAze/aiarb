@@ -89,7 +89,10 @@ class TestRender:
         under_rollout = text.split("## Rollout")[1]
         assert "> **OBJ-4, your decision:** Fairness first." in under_rollout
         under_summary = text.split("## Summary")[1].split("## Queue storage")[0]
-        assert "> **OBJ-3, ruled by the judge:** Ruled for the critic" in under_summary
+        assert (
+            "> **OBJ-3, ruled by the judge:** Title of OBJ-3. See *Rulings and decisions to apply*."
+            in under_summary
+        )
         assert "OBJ-5" not in text, "minor notes went to the planner"
 
     def test_lists_what_to_settle_first_then_what_to_apply(self) -> None:

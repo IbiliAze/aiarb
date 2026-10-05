@@ -164,7 +164,12 @@ def _applied(item: Objection, report: Report) -> str:
 
 def _note(item: Objection, report: Report) -> str:
     if item.status is Status.RULED:
-        return f"**{item.id}, ruled by the judge:** {ending(item).note}"
+        # Rulings run long, and an item can cite several sections: the ruling is
+        # given in full once, at the top.
+        return (
+            f"**{item.id}, ruled by the judge:** {report.title(item)}. "
+            "See *Rulings and decisions to apply*."
+        )
     if item.status is Status.DECIDED:
         return f"**{item.id}, your decision:** {decision(item)}"
     return f"**{item.id}, open {item.severity}:** {report.title(item)}. See *Before you build*."

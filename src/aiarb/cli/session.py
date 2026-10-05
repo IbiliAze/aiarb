@@ -19,6 +19,7 @@ from aiarb import output
 from aiarb.cli.progress import LiveProgress, duration
 from aiarb.cli.setup import ExitCode, Setup
 from aiarb.config.charter import Charter
+from aiarb.domain.ledger import Status
 from aiarb.graph import runner
 from aiarb.graph.state import total_cost
 from aiarb.output.report import RUN_STATUS_LABELS, Report, plural
@@ -198,14 +199,31 @@ def _print_finished(console: Console, report: Report, folder: Path) -> None:
     console.print(f"[bold {style}]{headline}[/] {advice}")
     for item in sorted(result.open_items, key=lambda item: -item.severity.rank):
         console.print(f"  {item.id}  [bold]{item.severity}[/]  {escape(report.title(item))}")
-    if result.downgraded:
-        ids = ", ".join(item.id for item in result.downgraded)
+    to_apply = [
+        f"{whose} {_on(noun, ids)}"
+        for whose, noun, status in (
+            ("the judge's", "ruling", Status.RULED),
+            ("your", "decision", Status.DECIDED),
+        )
+        if (ids := [item.id for item in report.ledger.values() if item.status is status])
+    ]
+    if to_apply:
         console.print(
-            f"[yellow]Rated lower after the debate, though nobody settled them: {ids}.[/]"
+            f"Apply {' and '.join(to_apply)} as you build: they are listed at the top of plan.md."
+        )
+    if result.downgraded:
+        lower = ", ".join(item.id for item in result.downgraded)
+        console.print(
+            f"[yellow]Rated lower after the debate, though nobody settled them: {lower}.[/]"
         )
     console.print(f"Files in {escape(str(_shown(folder)))}/", soft_wrap=True)
     for name in output.FILES:
         console.print(f"  {name:<13} [dim]{FILE_NOTES.get(name, '')}[/]")
+
+
+def _on(noun: str, ids: list[str]) -> str:
+    """ "rulings on OBJ-1, OBJ-3", or "ruling on OBJ-1"."""
+    return f"{noun}{'s' if len(ids) > 1 else ''} on {', '.join(ids)}"
 
 
 def _shown(path: Path) -> Path:
