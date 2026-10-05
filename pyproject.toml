@@ -73,6 +73,10 @@ select = [
     "TC",  # type-checking imports
 ]
 
+[tool.ruff.lint.flake8-type-checking]
+# Dataclass annotations are resolved at runtime by anything that introspects them.
+runtime-evaluated-decorators = ["dataclasses.dataclass"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true

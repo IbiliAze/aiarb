@@ -54,6 +54,7 @@ no offer to help further, no code fences. There is no user to talk to.' \
 - Never restate the diff, never list files, never pad with filler.
 - Wrap the body at 72 characters. Plain text; hyphens for any bullets.
 - Match the style of the recent subjects unless it hurts clarity.
+- Do not co-author yourself.
 
 Output the message only: no preamble, no explanation, no code fences.' 2>/dev/null
 ) || exit 0

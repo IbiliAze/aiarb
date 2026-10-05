@@ -22,12 +22,12 @@
 
 ## 2. Domain (plain Python)
 
-- [ ] Define `Objection`: id, claim, evidence reference, type, severity, status, history
-- [ ] Define the statuses and the allowed transitions between them
-- [ ] Enforce the closing rule: an item closes only with a plan change or cited evidence
-- [ ] Define the severity rubric and thresholds
-- [ ] Write the outcome function: ledger in, run status and exit code out
-- [ ] Unit-test every transition and outcome case
+- [x] Define `Objection`: id, claim, evidence reference, type, severity, status, history
+- [x] Define the statuses and the allowed transitions between them
+- [x] Enforce the closing rule: an item closes only with a plan change or cited evidence
+- [x] Define the severity rubric and thresholds
+- [x] Write the outcome function: ledger in, run status and exit code out
+- [x] Unit-test every transition and outcome case
 
 ## 3. Config
 
