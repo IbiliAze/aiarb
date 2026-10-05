@@ -13,13 +13,17 @@ agent:
   - schema: Responses
     output:
       plan: "# Queue\n\nStore queue places in the sessions table."
-      answers: [{id: OBJ-1, response: rebuttal, note: Writes are row-level.}]
+      answers: [{id: OBJ-1, response: rebuttal, note: Writes are row-level., evidence: [{kind: code, path: src/queue.py}]}]
   - schema: Rulings
     output:
       rulings: [{id: OBJ-1, verdict: dispute, note: Check the table engine.}]
   - schema: Verdict
     contains: OBJ-1
-    output: {finding: unverifiable, note: "The engine is set at deploy time, not in the repo."}
+    output:
+      result:
+        finding: unverifiable
+        note: The engine is set at deploy time, not in the repo.
+        task: Check the table engine on the production database.
 scorer:
   - {call: score, contains: OBJ-1, value: 0.9}
   - {call: score, contains: OBJ-1, value: 0.85}

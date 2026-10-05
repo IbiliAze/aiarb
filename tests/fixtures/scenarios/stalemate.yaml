@@ -13,19 +13,22 @@ agent:
   - schema: Responses
     output:
       plan: "# Queue\n\nOne queue per region."
-      answers: [{id: OBJ-1, response: rebuttal, note: Users are pinned to one region.}]
+      answers: [{id: OBJ-1, response: rebuttal, note: Users are pinned to one region., evidence: [{kind: code, path: src/queue.py}]}]
   - schema: Rulings
     output:
       rulings: [{id: OBJ-1, verdict: reject, note: Pinning is by cookie and can be cleared.}]
   - schema: Responses
     output:
       plan: "# Queue\n\nOne queue per region."
-      answers: [{id: OBJ-1, response: rebuttal, note: Clearing cookies is rare.}]
+      answers: [{id: OBJ-1, response: rebuttal, note: Clearing cookies is rare., evidence: [{kind: code, path: src/queue.py}]}]
   - schema: Rulings
     output:
       rulings: [{id: OBJ-1, verdict: reject, note: Rare is not never.}]
   - schema: JudgeRuling
     contains: OBJ-1
-    output: {favours: critic, ruling: "Key the queue place on the account, not the cookie."}
+    output:
+      favours: critic
+      ruling: Key the queue place on the account, not the cookie.
+      reason: A cleared cookie is enough to hold two places.
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}

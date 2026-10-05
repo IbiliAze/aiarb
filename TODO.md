@@ -79,7 +79,7 @@
 
 ## 9. Prompts and schemas
 
-- [ ] Write the JSON schema for each role's output
+- [x] Write the JSON schema for each role's output
 - [ ] Write the planner prompts: draft, and respond to objections
 - [ ] Write the critic prompts: raise objections, and rule on responses
 - [ ] Write the verifier, judge and explainer prompts

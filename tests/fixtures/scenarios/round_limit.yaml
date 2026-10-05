@@ -19,8 +19,8 @@ agent:
     output:
       plan: "# Queue\n\nPoll every second."
       answers:
-        - {id: OBJ-1, response: rebuttal, note: The cluster is sized for it.}
-        - {id: OBJ-2, response: rebuttal, note: The page is short-lived.}
+        - {id: OBJ-1, response: rebuttal, note: The cluster is sized for it., evidence: [{kind: code, path: src/queue.py}]}
+        - {id: OBJ-2, response: rebuttal, note: The page is short-lived., evidence: [{kind: code, path: src/queue.py}]}
   - schema: Rulings
     output:
       rulings:
@@ -29,15 +29,16 @@ agent:
   - schema: Verdict
     contains: OBJ-1
     output:
-      finding: critic_right
-      note: The cluster has one small node.
-      citations: [{kind: code, path: config/redis.yml, start_line: 2}]
+      result:
+        finding: critic_right
+        note: The cluster has one small node.
+        evidence: [{kind: code, path: config/redis.yml, start_line: 2}]
   - schema: Responses
     output:
       plan: "# Queue\n\nPush updates over server-sent events."
       answers:
-        - {id: OBJ-1, response: rebuttal, note: One node handles 100k ops/s.}
-        - {id: OBJ-2, response: fix, note: Switched to server-sent events.}
+        - {id: OBJ-1, response: rebuttal, note: One node handles 100k ops/s., evidence: [{kind: code, path: src/queue.py}]}
+        - {id: OBJ-2, response: fix, note: Switched to server-sent events., changed: [{kind: plan, section: Queue}]}
   - schema: Rulings
     output:
       rulings:
@@ -45,7 +46,7 @@ agent:
         - id: OBJ-2
           verdict: accept
           note: No polling now.
-          resolution: {kind: plan_change, citations: [{kind: plan, section: Queue}]}
+          resolution: {kind: plan_change, sections: [{kind: plan, section: Queue}]}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}
   - {call: score, contains: OBJ-2, value: 0.3}

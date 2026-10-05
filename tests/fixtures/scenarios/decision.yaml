@@ -13,7 +13,7 @@ agent:
   - schema: Responses
     output:
       plan: "# Queue\n\nAdmit users in batches of 500."
-      answers: [{id: OBJ-1, response: rebuttal, note: Speed matters more.}]
+      answers: [{id: OBJ-1, response: rebuttal, note: Speed matters more., evidence: [{kind: code, path: src/queue.py}]}]
   - schema: Rulings
     output:
       rulings: [{id: OBJ-1, verdict: reject, note: The business has not said so.}]

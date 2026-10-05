@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from aiarb.domain.ledger import Actor, Status
 from aiarb.graph import prompts
 from aiarb.graph.nodes._calls import ask, by_id, in_status
-from aiarb.schemas.outputs import Rulings
+from aiarb.schemas.outputs import Accept, Rulings
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -37,7 +37,7 @@ async def rule(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
             actor=Actor.CRITIC,
             round=state["round"],
             note=ruling.note,
-            resolution=ruling.resolution.to_resolution() if ruling.resolution else None,
+            resolution=ruling.resolution.to_resolution() if isinstance(ruling, Accept) else None,
         )
     return {
         "ledger": ruled,

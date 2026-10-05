@@ -7,7 +7,7 @@ from aiarb.domain.ledger import Actor, Resolution, ResolutionKind, Status
 from aiarb.graph import prompts
 from aiarb.graph.nodes._calls import ask, in_status
 from aiarb.ports.calls import Cost
-from aiarb.schemas.outputs import Verdict, refs
+from aiarb.schemas.outputs import PlannerRight, Unverifiable, Verdict, refs
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -32,19 +32,20 @@ async def verify(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     )
     settled = {}
     for item, result in zip(disputed, results, strict=True):
-        verdict = result.output
-        cited = refs(verdict.citations)
+        finding = result.output.result
+        cited = refs(finding.evidence)
+        planner_right = isinstance(finding, PlannerRight)
         settled[item.id] = item.transition(
-            _FINDINGS[verdict.finding],
+            _FINDINGS[finding.finding],
             actor=Actor.VERIFIER,
             round=state["round"],
-            note=verdict.note,
-            refs=() if verdict.finding == "planner_right" else cited,
-            resolution=(
-                Resolution(ResolutionKind.EVIDENCE, cited)
-                if verdict.finding == "planner_right"
-                else None
+            note=(
+                f"{finding.note} To settle before building: {finding.task}"
+                if isinstance(finding, Unverifiable)
+                else finding.note
             ),
+            refs=() if planner_right else cited,
+            resolution=Resolution(ResolutionKind.EVIDENCE, cited) if planner_right else None,
         )
     return {
         "ledger": settled,

@@ -19,7 +19,7 @@ agent:
     output:
       plan: "# Queue\n\nKeep the queue in Redis, with a comment on its size."
       answers:
-        - {id: OBJ-1, response: fix, note: Moved the queue to Redis.}
+        - {id: OBJ-1, response: fix, note: Moved the queue to Redis., changed: [{kind: plan, section: Queue}]}
     cost: {usd: 0.5}
   - schema: Rulings
     output:
@@ -27,7 +27,7 @@ agent:
         - id: OBJ-1
           verdict: accept
           note: Redis survives deploys.
-          resolution: {kind: plan_change, citations: [{kind: plan, section: Queue}]}
+          resolution: {kind: plan_change, sections: [{kind: plan, section: Queue}]}
     cost: {usd: 0.25}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6, cost: {usd: 0.01}}

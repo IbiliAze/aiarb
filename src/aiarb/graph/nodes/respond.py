@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from aiarb.domain.ledger import Actor, Status
 from aiarb.graph import prompts
 from aiarb.graph.nodes._calls import ask, by_id, in_status
-from aiarb.schemas.outputs import Responses, refs
+from aiarb.schemas.outputs import Responses
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -35,7 +35,7 @@ async def respond(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
             actor=Actor.PLANNER,
             round=round,
             note=f"{answers[item.id].response.capitalize()}: {answers[item.id].note}",
-            refs=refs(answers[item.id].citations),
+            refs=answers[item.id].cited,
         )
         for item in open_items
     }

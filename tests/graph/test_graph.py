@@ -158,7 +158,8 @@ def worst_case(rounds: int, type: str) -> Scenario:
     ruled and the run finishes, which is the most steps one invocation can take;
     a trade-off pauses the run for a decision instead. One other item closes in
     round 2, so the debate runs to the limit instead of stalling."""
-    resolution = {"kind": "plan_change", "citations": [{"kind": "plan", "section": "Queue"}]}
+    queue = {"kind": "plan", "section": "Queue"}
+    resolution = {"kind": "plan_change", "sections": [queue]}
     agent: list[dict[str, Any]] = [
         {"schema": "PlanDraft", "output": {"plan": "# Queue"}},
         {
@@ -169,7 +170,7 @@ def worst_case(rounds: int, type: str) -> Scenario:
                         "claim": f"Claim {n}.",
                         "type": type,
                         "severity": "major",
-                        "evidence": [{"kind": "plan", "section": "Queue"}],
+                        "evidence": [queue],
                     }
                     for n in (1, 2)
                 ]
@@ -178,7 +179,9 @@ def worst_case(rounds: int, type: str) -> Scenario:
     ]
     for round in range(1, rounds + 1):
         ids = ["OBJ-1", "OBJ-2"] if round <= 2 else ["OBJ-1"]
-        answers = [{"id": id, "response": "rebuttal", "note": "No."} for id in ids]
+        answers = [
+            {"id": id, "response": "rebuttal", "note": "No.", "evidence": [queue]} for id in ids
+        ]
         rulings: list[dict[str, Any]] = [{"id": "OBJ-1", "verdict": "dispute", "note": "Check."}]
         if round == 1:
             rulings.append({"id": "OBJ-2", "verdict": "reject", "note": "No."})
@@ -189,10 +192,20 @@ def worst_case(rounds: int, type: str) -> Scenario:
         agent += [
             {"schema": "Responses", "output": {"plan": "# Queue", "answers": answers}},
             {"schema": "Rulings", "output": {"rulings": rulings}},
-            {"schema": "Verdict", "output": {"finding": "critic_right", "note": "As claimed."}},
+            {
+                "schema": "Verdict",
+                "output": {
+                    "result": {
+                        "finding": "critic_right",
+                        "note": "As claimed.",
+                        "evidence": [queue],
+                    }
+                },
+            },
         ]
     if type == "design":
-        agent.append({"schema": "JudgeRuling", "output": {"favours": "critic", "ruling": "Do."}})
+        ruling = {"favours": "critic", "ruling": "Do.", "reason": "Because."}
+        agent.append({"schema": "JudgeRuling", "output": ruling})
     scorer = [
         {"call": "score", "contains": "OBJ-1", "value": 0.6},
         {"call": "score", "contains": "OBJ-2", "value": 0.6},

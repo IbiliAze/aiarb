@@ -24,9 +24,9 @@ agent:
     output:
       plan: "# Queue\n\nAdmit users in batches of 500."
       answers:
-        - {id: OBJ-1, response: rebuttal, note: It took 800 in the last sale.}
-        - {id: OBJ-2, response: rebuttal, note: Speed matters more.}
-        - {id: OBJ-3, response: rebuttal, note: It never changes.}
+        - {id: OBJ-1, response: rebuttal, note: It took 800 in the last sale., evidence: [{kind: code, path: src/queue.py}]}
+        - {id: OBJ-2, response: rebuttal, note: Speed matters more., evidence: [{kind: code, path: src/queue.py}]}
+        - {id: OBJ-3, response: rebuttal, note: It never changes., evidence: [{kind: code, path: src/queue.py}]}
   - schema: Rulings
     output:
       rulings:
@@ -35,7 +35,7 @@ agent:
         - {id: OBJ-3, verdict: reject, note: It will change during a sale.}
   - schema: JudgeRuling
     contains: OBJ-3
-    output: {favours: critic, ruling: Read the batch size from config.}
+    output: {favours: critic, ruling: Read the batch size from config., reason: It changes during a sale.}
 scorer:
   - {call: score, contains: OBJ-1, value: 0.6}
   - {call: score, contains: OBJ-2, value: 0.4}

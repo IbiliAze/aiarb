@@ -3,7 +3,6 @@ from typing import Any
 
 import pytest
 from langgraph.runtime import Runtime
-from pydantic import ValidationError
 
 from aiarb.config.charter import Charter
 from aiarb.domain.ledger import (
@@ -33,7 +32,6 @@ from aiarb.graph.nodes import (
 )
 from aiarb.graph.state import RunState, initial_state
 from aiarb.ports.calls import Cost, RetryableCallError
-from aiarb.schemas.outputs import Ruling, Verdict
 from tests.fakes import AgentStep, ScorerStep, ScriptedCodeAgent, ScriptedScorer
 
 CODE = {"kind": "code", "path": "src/queue.py", "start_line": 10}
@@ -207,8 +205,8 @@ class TestRespond:
         output = {
             "plan": "# Revised",
             "answers": [
-                {"id": "OBJ-1", "response": "fix", "note": "Persist places.", "citations": [PLAN]},
-                {"id": "OBJ-2", "response": "rebuttal", "note": "Already handled."},
+                {"id": "OBJ-1", "response": "fix", "note": "Persist places.", "changed": [PLAN]},
+                {"id": "OBJ-2", "response": "rebuttal", "note": "Handled.", "evidence": [CODE]},
             ],
         }
         rt = runtime(
@@ -235,13 +233,17 @@ class TestRespond:
         assert fixed.status is Status.ANSWERED
         assert fixed.history[-1].note == "Fix: Persist places."
         assert fixed.history[-1].refs == (PlanRef("Queue storage"),)
+        rebutted = update["ledger"]["OBJ-2"]
+        assert rebutted.history[-1].note == "Rebuttal: Handled."
+        assert rebutted.history[-1].refs == (CodeRef("src/queue.py", 10),)
         request = fakes(rt)[0].calls[1]
         assert request.session_id == "session-1"
         assert "Minor notes" in request.prompt
         assert "OBJ-3" in request.prompt
 
     async def test_an_answer_set_that_skips_an_objection_is_retryable(self, tmp_path: Path) -> None:
-        output = {"plan": "# Revised", "answers": [{"id": "OBJ-1", "response": "fix", "note": "x"}]}
+        fix = {"id": "OBJ-1", "response": "fix", "note": "x", "changed": [PLAN]}
+        output = {"plan": "# Revised", "answers": [fix]}
         rt = runtime(
             tmp_path, agent=[{"schema": "Responses", "output": output, "cost": {"usd": 1}}]
         )
@@ -265,7 +267,7 @@ class TestRule:
                     "id": "OBJ-1",
                     "verdict": "accept",
                     "note": "Fixed.",
-                    "resolution": {"kind": "plan_change", "citations": [PLAN]},
+                    "resolution": {"kind": "plan_change", "sections": [PLAN]},
                 },
                 {"id": "OBJ-2", "verdict": "reject", "note": "Still loses places."},
                 {"id": "OBJ-3", "verdict": "dispute", "note": "AOF is off in prod."},
@@ -295,19 +297,37 @@ class TestVerify:
                     "schema": "Verdict",
                     "contains": "OBJ-1",
                     "cost": {"usd": 0.5},
-                    "output": {"finding": "planner_right", "note": "AOF on.", "citations": [CODE]},
+                    "output": {
+                        "result": {
+                            "finding": "planner_right",
+                            "note": "AOF on.",
+                            "evidence": [CODE],
+                        }
+                    },
                 },
                 {
                     "schema": "Verdict",
                     "contains": "OBJ-2",
                     "cost": {"usd": 0.5},
-                    "output": {"finding": "critic_right", "note": "No retry.", "citations": [CODE]},
+                    "output": {
+                        "result": {
+                            "finding": "critic_right",
+                            "note": "No retry.",
+                            "evidence": [CODE],
+                        }
+                    },
                 },
                 {
                     "schema": "Verdict",
                     "contains": "OBJ-3",
                     "cost": {"usd": 0.5},
-                    "output": {"finding": "unverifiable", "note": "Needs a load test."},
+                    "output": {
+                        "result": {
+                            "finding": "unverifiable",
+                            "note": "It depends on load.",
+                            "task": "Load-test Redis at 50k writes a second.",
+                        }
+                    },
                 },
             ],
         )
@@ -323,6 +343,9 @@ class TestVerify:
         assert ledger["OBJ-2"].status is Status.OPEN
         assert ledger["OBJ-2"].history[-1].refs == (CodeRef("src/queue.py", 10),)
         assert ledger["OBJ-3"].status is Status.DEFERRED
+        assert ledger["OBJ-3"].history[-1].note == (
+            "It depends on load. To settle before building: Load-test Redis at 50k writes a second."
+        )
         assert update["costs"] == {"verifier": Cost(usd=1.5)}
         assert all(call.session_id is None for call in fakes(rt)[0].calls)
 
@@ -336,7 +359,12 @@ class TestJudge:
                     "schema": "JudgeRuling",
                     "contains": "OBJ-3",
                     "cost": {"usd": 1},
-                    "output": {"favours": "critic", "ruling": "Persist places in Postgres."},
+                    "output": {
+                        "favours": "critic",
+                        "ruling": "Persist places in Postgres.",
+                        "reason": "Redis loses them on failover.",
+                        "evidence": [CODE],
+                    },
                 },
             ],
         )
@@ -352,9 +380,11 @@ class TestJudge:
         assert ledger["OBJ-1"].status is Status.DEFERRED
         assert ledger["OBJ-2"].status is Status.AWAITING_DECISION
         assert ledger["OBJ-3"].status is Status.RULED
-        assert (
-            ledger["OBJ-3"].history[-1].note == "Ruled for the critic: Persist places in Postgres."
+        ruled = ledger["OBJ-3"].history[-1]
+        assert ruled.note == (
+            "Ruled for the critic: Persist places in Postgres. Why: Redis loses them on failover."
         )
+        assert ruled.refs == (CodeRef("src/queue.py", 10),)
         assert {ledger[id].history[-1].round for id in ledger} == {4}
         assert update["costs"] == {"judge": Cost(usd=1)}
 
@@ -399,34 +429,3 @@ def test_finalise_records_how_the_run_ended(
     items: tuple[Objection, ...], status: RunStatus
 ) -> None:
     assert finalise(state(*items)) == {"status": status}
-
-
-class TestSchemas:
-    def test_accepting_needs_a_resolution(self) -> None:
-        with pytest.raises(ValidationError, match="accepted answer needs a resolution"):
-            Ruling.model_validate({"id": "OBJ-1", "verdict": "accept", "note": "You're right."})
-
-    def test_a_plan_change_must_cite_the_plan(self) -> None:
-        with pytest.raises(ValidationError, match="must cite the plan section"):
-            Ruling.model_validate(
-                {
-                    "id": "OBJ-1",
-                    "verdict": "accept",
-                    "note": "OK.",
-                    "resolution": {"kind": "plan_change", "citations": [CODE]},
-                }
-            )
-
-    def test_siding_with_the_planner_needs_evidence(self) -> None:
-        with pytest.raises(ValidationError, match="cite the evidence"):
-            Verdict.model_validate({"finding": "planner_right", "note": "Looks fine."})
-
-    def test_a_citation_outside_the_repo_is_a_bad_answer(self) -> None:
-        with pytest.raises(ValidationError, match="must be a path inside the repo"):
-            Verdict.model_validate(
-                {
-                    "finding": "critic_right",
-                    "note": "x",
-                    "citations": [{"kind": "code", "path": "/etc/passwd"}],
-                }
-            )

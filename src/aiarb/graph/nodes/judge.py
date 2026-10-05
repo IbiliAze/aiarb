@@ -7,7 +7,7 @@ from aiarb.domain.ledger import Actor, ObjectionType, Status
 from aiarb.graph import prompts
 from aiarb.graph.nodes._calls import ask, in_status
 from aiarb.ports.calls import Cost
-from aiarb.schemas.outputs import JudgeRuling
+from aiarb.schemas.outputs import JudgeRuling, refs
 
 if TYPE_CHECKING:
     from langgraph.runtime import Runtime
@@ -46,11 +46,13 @@ async def judge(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
         *(ask(runtime, "judge", prompts.judge(state, item), JudgeRuling) for item in deadlocked)
     )
     for item, result in zip(deadlocked, results, strict=True):
+        ruling = result.output
         handled[item.id] = item.transition(
             Status.RULED,
             actor=Actor.JUDGE,
             round=round,
-            note=f"Ruled for the {result.output.favours}: {result.output.ruling}",
+            note=f"Ruled for the {ruling.favours}: {ruling.ruling} Why: {ruling.reason}",
+            refs=refs(ruling.evidence),
         )
     if not handled:
         return {}
