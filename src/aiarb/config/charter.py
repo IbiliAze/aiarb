@@ -9,7 +9,7 @@ import dataclasses
 import difflib
 from collections.abc import Hashable, Sequence
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 import yaml
 from pydantic import (
@@ -98,7 +98,8 @@ class Charter(_Section):
     def _empty_sections_use_defaults(cls, data: Any) -> Any:
         # A section whose settings are all commented out loads from YAML as null.
         if isinstance(data, dict):
-            return {key: value for key, value in data.items() if value is not None}
+            sections = cast("dict[str, Any]", data)
+            return {key: value for key, value in sections.items() if value is not None}
         return data
 
 
@@ -152,11 +153,13 @@ class _StrictLoader(yaml.SafeLoader):
     """A safe loader that refuses duplicate keys instead of keeping the last one."""
 
     def construct_mapping(self, node: yaml.MappingNode, deep: bool = False) -> dict[Hashable, Any]:
-        first_seen: dict[Hashable, int] = {}
+        first_seen: dict[str, int] = {}
         for key_node, _ in node.value:
-            key = self.construct_object(key_node, deep=deep)
-            if not isinstance(key, Hashable):
+            # Keys are compared as written. Charter keys are plain names, so
+            # there is no need to construct them first.
+            if not isinstance(key_node, yaml.ScalarNode):
                 continue
+            key = str(key_node.value)
             if key in first_seen:
                 raise yaml.constructor.ConstructorError(
                     None,
@@ -170,13 +173,12 @@ class _StrictLoader(yaml.SafeLoader):
 
 def _parse(text: str) -> tuple[Any, yaml.Node | None]:
     """The charter's data, and its YAML nodes for finding line numbers."""
+    data = yaml.load(text, Loader=_StrictLoader)
     loader = _StrictLoader(text)
     try:
-        root = loader.get_single_node()
-        data = None if root is None else loader.construct_document(root)
+        return data, loader.get_single_node()
     finally:
         loader.dispose()
-    return data, root
 
 
 def _yaml_problem(error: yaml.MarkedYAMLError) -> str:
