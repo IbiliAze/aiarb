@@ -18,7 +18,7 @@ from __future__ import annotations
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from langgraph.graph import END, START, StateGraph
+from langgraph.graph import END, START, StateGraph  # pyright: ignore[reportMissingTypeStubs]
 from langgraph.types import RetryPolicy
 
 from aiarb.graph import nodes, routing
@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
     from langchain_core.runnables import RunnableConfig
-    from langgraph.graph.state import CompiledStateGraph
+    from langgraph.graph.state import CompiledStateGraph  # pyright: ignore[reportMissingTypeStubs]
 
     from aiarb.config.charter import Charter
 
@@ -82,21 +82,21 @@ def build_graph(
     """The debate graph, ready to run with a `RunContext`."""
     graph = StateGraph(RunState, context_schema=RunContext)
 
-    graph.add_node("scan", nodes.scan)
-    graph.add_node(
+    graph.add_node("scan", nodes.scan)  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node(  # pyright: ignore[reportUnknownMemberType]
         "draft_plan", nodes.draft_plan, retry_policy=retry_policy, timeout=TIMEOUTS["draft_plan"]
     )
-    graph.add_node(
+    graph.add_node(  # pyright: ignore[reportUnknownMemberType]
         "critique", nodes.critique, retry_policy=retry_policy, timeout=TIMEOUTS["critique"]
     )
-    graph.add_node("triage", nodes.triage, retry_policy=retry_policy, timeout=TIMEOUTS["triage"])
-    graph.add_node("respond", nodes.respond, retry_policy=retry_policy, timeout=TIMEOUTS["respond"])
-    graph.add_node("rule", nodes.rule, retry_policy=retry_policy, timeout=TIMEOUTS["rule"])
-    graph.add_node("verify", nodes.verify, retry_policy=retry_policy, timeout=TIMEOUTS["verify"])
-    graph.add_node("judge", nodes.judge, retry_policy=retry_policy, timeout=TIMEOUTS["judge"])
-    graph.add_node("decide", nodes.decide)
-    graph.add_node("rescore", nodes.rescore, retry_policy=retry_policy, timeout=TIMEOUTS["rescore"])
-    graph.add_node("finalise", nodes.finalise)
+    graph.add_node("triage", nodes.triage, retry_policy=retry_policy, timeout=TIMEOUTS["triage"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("respond", nodes.respond, retry_policy=retry_policy, timeout=TIMEOUTS["respond"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("rule", nodes.rule, retry_policy=retry_policy, timeout=TIMEOUTS["rule"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("verify", nodes.verify, retry_policy=retry_policy, timeout=TIMEOUTS["verify"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("judge", nodes.judge, retry_policy=retry_policy, timeout=TIMEOUTS["judge"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("decide", nodes.decide)  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("rescore", nodes.rescore, retry_policy=retry_policy, timeout=TIMEOUTS["rescore"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("finalise", nodes.finalise)  # pyright: ignore[reportUnknownMemberType]
 
     graph.add_edge(START, "scan")
     graph.add_edge("scan", "draft_plan")
@@ -111,7 +111,7 @@ def build_graph(
     graph.add_edge("rescore", "finalise")
     graph.add_edge("finalise", END)
 
-    return graph.compile(name="aiarb")
+    return graph.compile(name="aiarb")  # pyright: ignore[reportUnknownMemberType]
 
 
 def recursion_limit(max_rounds: int) -> int:
