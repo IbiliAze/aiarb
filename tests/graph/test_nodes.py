@@ -1,3 +1,5 @@
+from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,7 @@ from aiarb.domain.ledger import (
 )
 from aiarb.domain.outcome import RunStatus
 from aiarb.domain.scoring import Severity
+from aiarb.graph import prompts
 from aiarb.graph.context import RunContext
 from aiarb.graph.nodes import (
     critique,
@@ -32,6 +35,7 @@ from aiarb.graph.nodes import (
 )
 from aiarb.graph.state import RunState, initial_state
 from aiarb.ports.calls import Cost, RetryableCallError
+from aiarb.ports.scorer import Judgement, Level
 from tests.fakes import AgentStep, ScorerStep, ScriptedCodeAgent, ScriptedScorer
 
 CODE = {"kind": "code", "path": "src/queue.py", "start_line": 10}
@@ -43,12 +47,14 @@ def runtime(
     agent: list[dict[str, Any]] | None = None,
     scorer: list[dict[str, Any]] | None = None,
 ) -> Runtime[RunContext]:
+    scripted = ScriptedScorer([ScorerStep.model_validate(s) for s in scorer or []])
     return Runtime(
         context=RunContext(
             charter=Charter(),
             repo=repo,
             agent=ScriptedCodeAgent([AgentStep.model_validate(s) for s in agent or []]),
-            scorer=ScriptedScorer([ScorerStep.model_validate(s) for s in scorer or []]),
+            scorer=scripted,
+            confirmer=scripted,
         )
     )
 
@@ -92,6 +98,27 @@ def objection(
     if status is Status.DISPUTED:
         return item
     raise ValueError(f"no route to {status} in this helper")
+
+
+def scored(item: Objection, severity: Severity) -> Objection:
+    """The objection as triage left it, at `severity`."""
+    return item.rescore(severity, round=0, note="Scored.")
+
+
+class AnsweringScorer:
+    """A scorer that gives one answer to every impact question."""
+
+    def __init__(self, answer: Judgement[float]) -> None:
+        self.answer = answer
+
+    async def score(self, subject: str, question: str, levels: Sequence[Level]) -> Judgement[float]:
+        return self.answer
+
+    async def choose(self, subject: str, question: str, options: Sequence[str]) -> Judgement[str]:
+        raise NotImplementedError
+
+    async def yes_no(self, subject: str, question: str) -> Judgement[bool]:
+        raise NotImplementedError
 
 
 def state(*items: Objection, round: int = 0, **fields: Any) -> RunState:
@@ -184,15 +211,33 @@ class TestTriage:
         assert (minor.status, minor.severity) == (Status.NOTED, Severity.MINOR)
         assert update["costs"] == {"scorer": Cost(usd=0.02)}
 
-    async def test_scores_on_the_severity_rubric_at_the_charter_thresholds(
+    async def test_asks_about_impact_with_the_objection_and_charter_as_the_subject(
         self, tmp_path: Path
     ) -> None:
         rt = runtime(tmp_path, scorer=[{"call": "score", "value": 0.5}])
 
         await triage(state(objection("OBJ-1")), rt)
 
-        question = fakes(rt)[1].calls[0][1]
-        assert "OBJ-1" in question
+        _, subject, question = fakes(rt)[1].calls[0]
+        assert subject.startswith("OBJ-1 (design, major, open): Claim OBJ-1.")
+        assert "The charter for this codebase:" in subject
+        assert question == prompts.IMPACT
+
+    async def test_records_the_score_and_any_escalation(self, tmp_path: Path) -> None:
+        unsure = Judgement(value=0.3, confidence=0.4, cost=Cost(usd=0.25))
+        sure = Judgement(value=0.6, confidence=0.9, cost=Cost(usd=0.5)).replacing(unsure)
+        rt = runtime(tmp_path)
+        context = replace(rt.context, scorer=AnsweringScorer(sure))
+
+        update = await triage(state(objection("OBJ-1")), Runtime(context=context))
+
+        note = update["ledger"]["OBJ-1"].history[-1].note
+        assert note == (
+            "Scored 0.60 for impact (major), with confidence 0.90. The fallback scorer gave "
+            "this after the first scorer's 0.30, with confidence 0.40, fell below the "
+            "confidence threshold."
+        )
+        assert update["costs"] == {"scorer": Cost(usd=0.75)}
 
     async def test_leaves_already_triaged_objections_alone(self, tmp_path: Path) -> None:
         triaged = objection("OBJ-1").rescore(Severity.MAJOR, round=0, note="Scored.")
@@ -257,6 +302,27 @@ class TestRespond:
         resolved = objection("OBJ-1", status=Status.RESOLVED)
 
         assert await respond(state(resolved), runtime(tmp_path)) == {}
+
+    async def test_puts_the_most_severe_objections_first(self, tmp_path: Path) -> None:
+        output = {
+            "plan": "# Revised",
+            "answers": [
+                {"id": id, "response": "fix", "note": "Done.", "changed": [PLAN]}
+                for id in ("OBJ-1", "OBJ-2", "OBJ-3")
+            ],
+        }
+        rt = runtime(tmp_path, agent=[{"schema": "Responses", "output": output}])
+        items = (
+            objection("OBJ-1", severity=Severity.MODERATE),
+            objection("OBJ-2", severity=Severity.BLOCKER),
+            objection("OBJ-3", severity=Severity.MODERATE),
+        )
+
+        await respond(state(*items), rt)
+
+        prompt = fakes(rt)[0].calls[0].prompt
+        order = sorted(("OBJ-1", "OBJ-2", "OBJ-3"), key=lambda id: prompt.index(f"{id} ("))
+        assert order == ["OBJ-2", "OBJ-1", "OBJ-3"]
 
 
 class TestRule:
@@ -415,6 +481,82 @@ class TestRescore:
         assert list(update["ledger"]) == ["OBJ-2"]
         assert update["ledger"]["OBJ-2"].severity is Severity.MODERATE
         assert update["costs"] == {"scorer": Cost(usd=0.02)}
+
+    async def test_a_language_model_confirms_each_blocker(self, tmp_path: Path) -> None:
+        rt = runtime(
+            tmp_path,
+            scorer=[
+                {"call": "score", "value": 0.9},
+                {"call": "yes_no", "value": True, "confidence": 0.8, "cost": {"usd": 0.03}},
+            ],
+        )
+        blocker = scored(objection("OBJ-1"), Severity.BLOCKER)
+
+        update = await rescore(state(blocker, round=2), rt)
+
+        confirmed = update["ledger"]["OBJ-1"]
+        assert confirmed.severity is Severity.BLOCKER
+        assert confirmed.history[-1].note == (
+            "A language model confirmed it as a blocker (yes, with confidence 0.80)."
+        )
+        _, subject, question = fakes(rt)[1].calls[1]
+        assert "OBJ-1" in subject
+        assert question == prompts.IS_BLOCKER
+        assert update["costs"] == {"scorer": Cost(usd=0.03)}
+
+    async def test_a_blocker_confidently_rejected_is_rated_major_and_flagged(
+        self, tmp_path: Path
+    ) -> None:
+        rt = runtime(
+            tmp_path,
+            scorer=[
+                {"call": "score", "value": 0.85},
+                {"call": "yes_no", "value": False, "confidence": 0.9},
+            ],
+        )
+        major = scored(objection("OBJ-1"), Severity.MAJOR)
+
+        update = await rescore(state(major, round=2), rt)
+
+        item = update["ledger"]["OBJ-1"]
+        rescored, rejected = item.history[-2:]
+        assert rescored.severity is Severity.BLOCKER
+        assert rescored.note.startswith("Rescored after the debate: 0.85 for impact (blocker)")
+        assert rejected.severity is Severity.MAJOR
+        assert rejected.note == (
+            "A language model did not confirm it as a blocker (no, with confidence 0.90), so "
+            "it is rated major. Flagged: it was rated blocker before and is still open, though "
+            "nobody settled it."
+        )
+        assert item.dropped_from is Severity.BLOCKER
+
+    async def test_an_unsure_rejection_leaves_the_blocker_standing(self, tmp_path: Path) -> None:
+        rt = runtime(
+            tmp_path,
+            scorer=[
+                {"call": "score", "value": 0.9},
+                {"call": "yes_no", "value": False, "confidence": 0.5},
+            ],
+        )
+        blocker = scored(objection("OBJ-1"), Severity.BLOCKER)
+
+        update = await rescore(state(blocker, round=2), rt)
+
+        item = update["ledger"]["OBJ-1"]
+        assert item.severity is Severity.BLOCKER
+        assert "unsure (no, with confidence 0.50), so the call stands" in item.history[-1].note
+
+    async def test_a_drop_without_settling_is_flagged(self, tmp_path: Path) -> None:
+        rt = runtime(tmp_path, scorer=[{"call": "score", "value": 0.3}])
+        blocker = scored(objection("OBJ-1"), Severity.BLOCKER)
+
+        update = await rescore(state(blocker, round=2), rt)
+
+        item = update["ledger"]["OBJ-1"]
+        assert item.severity is Severity.MODERATE
+        assert item.history[-1].note.endswith(
+            "Flagged: it was rated blocker before and is still open, though nobody settled it."
+        )
 
 
 @pytest.mark.parametrize(

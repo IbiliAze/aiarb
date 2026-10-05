@@ -10,7 +10,7 @@ from aiarb.ports.code_agent import AgentRequest, AgentResult, OutputT
 from aiarb.ports.scorer import Level
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Iterable, Sequence
 
     from langgraph.runtime import Runtime
 
@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from aiarb.graph.context import RunContext
     from aiarb.graph.state import Role, RunState
     from aiarb.ports.calls import Cost
+    from aiarb.ports.scorer import Judgement
 
 
 async def ask(
@@ -49,6 +50,26 @@ def severity_levels(thresholds: SeverityThresholds) -> list[Level]:
         Severity.BLOCKER: thresholds.blocker,
     }
     return [Level(starts[severity], RUBRIC[severity]) for severity in Severity]
+
+
+def impact_note(lead: str, judgement: Judgement[float], severity: Severity) -> str:
+    """What the ledger records of an impact score."""
+    note = (
+        f"{lead} {judgement.value:.2f} for impact ({severity}), "
+        f"with confidence {judgement.confidence:.2f}."
+    )
+    first = judgement.escalated_from
+    if first is not None:
+        note += (
+            f" The fallback scorer gave this after the first scorer's {first.value:.2f}, "
+            f"with confidence {first.confidence:.2f}, fell below the confidence threshold."
+        )
+    return note
+
+
+def by_severity(items: Iterable[Objection]) -> list[Objection]:
+    """Most severe first, and in the order raised within a severity."""
+    return sorted(items, key=lambda item: -item.severity.rank)
 
 
 class _Identified(Protocol):

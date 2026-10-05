@@ -6,6 +6,10 @@ then what the task works on, each in its own XML tag. The brief is sent on every
 turn, not only a session's first: a session that has been lost restarts from the
 latest prompt alone.
 
+The scorer is the exception. It is given one objection as its subject and asked
+one short question about it, since Jev reads both literally. The language-model
+scorer adds its own brief.
+
 Objections are always named by id, which is what scripted fakes match on.
 """
 
@@ -16,6 +20,7 @@ from importlib.resources import files
 from typing import TYPE_CHECKING
 
 from aiarb.domain.ledger import CodeRef, Ref, Status
+from aiarb.domain.scoring import RUBRIC, Severity
 
 if TYPE_CHECKING:
     from collections.abc import Iterable
@@ -138,12 +143,24 @@ def explain(state: RunState) -> str:
     )
 
 
-def score(item: Objection) -> str:
-    return _join(
-        "If this objection is right, how much does it matter? Rate its impact on the "
-        "rubric. Do not judge whether it is right.",
-        describe(item),
-    )
+IMPACT = (
+    "Assume this objection is right. How much harm would the problem it describes do "
+    "if the plan were built with that problem as it now stands? Rate the harm only, "
+    "not whether the objection is right."
+)
+"""What the scorer is asked of each objection, before the debate and after it."""
+
+IS_BLOCKER = (
+    "Assume this objection is right. Would building the plan with the problem it "
+    f"describes, as it now stands, mean the following? {RUBRIC[Severity.BLOCKER]}"
+)
+"""What a language model is asked to confirm a blocker call."""
+
+
+def scored(item: Objection, charter: Charter) -> str:
+    """What the scorer is shown of an objection: it, the debate over it so far, and
+    the charter its impact is measured against."""
+    return _join(describe(item), f"The charter for this codebase:\n{_charter(charter)}")
 
 
 def describe(item: Objection) -> str:

@@ -33,6 +33,9 @@ class Outcome:
     open_items: tuple[Objection, ...]
     blockers: tuple[Objection, ...]
     """The open items that are blockers."""
+    downgraded: tuple[Objection, ...]
+    """Open items the scorer now rates lower than it did before, though nobody
+    settled them: worth a second look."""
 
     @property
     def exit_code(self) -> int:
@@ -48,4 +51,5 @@ def outcome(ledger: Ledger) -> Outcome:
         status = RunStatus.SETTLED_WITH_OPEN_ITEMS
     else:
         status = RunStatus.SETTLED
-    return Outcome(status=status, open_items=open_items, blockers=blockers)
+    downgraded = tuple(item for item in open_items if item.dropped_from is not None)
+    return Outcome(status=status, open_items=open_items, blockers=blockers, downgraded=downgraded)

@@ -59,28 +59,39 @@ class TestJudgement:
         with pytest.raises(ValueError, match="confidence must be between 0 and 1"):
             Judgement(value=True, confidence=confidence, cost=Cost())
 
+    def test_replacing_an_unsure_answer_keeps_it_and_adds_its_cost(self) -> None:
+        unsure = Judgement(value=0.4, confidence=0.3, cost=Cost(usd=0.25, input_tokens=100))
+        sure = Judgement(value=0.6, confidence=0.9, cost=Cost(usd=0.5, input_tokens=900))
+
+        replaced = sure.replacing(unsure)
+
+        assert (replaced.value, replaced.confidence) == (0.6, 0.9)
+        assert replaced.escalated_from == unsure
+        assert replaced.cost == Cost(usd=0.75, input_tokens=1000)
+
 
 class FixedScorer:
     """The smallest thing that satisfies the protocol; mypy checks that it does."""
 
-    async def score(self, question: str, levels: Sequence[Level]) -> Judgement[float]:
+    async def score(self, subject: str, question: str, levels: Sequence[Level]) -> Judgement[float]:
         check_levels(levels)
         return Judgement(value=levels[-1].score, confidence=0.9, cost=Cost(usd=0.001))
 
-    async def choose(self, question: str, options: Sequence[str]) -> Judgement[str]:
+    async def choose(self, subject: str, question: str, options: Sequence[str]) -> Judgement[str]:
         check_options(options)
         return Judgement(value=options[0], confidence=0.6, cost=Cost(usd=0.001))
 
-    async def yes_no(self, question: str) -> Judgement[bool]:
+    async def yes_no(self, subject: str, question: str) -> Judgement[bool]:
         return Judgement(value=True, confidence=0.95, cost=Cost(usd=0.001))
 
 
 async def test_each_call_returns_a_value_with_its_confidence_and_cost() -> None:
     scorer: Scorer = FixedScorer()
 
-    scored = await scorer.score("How much does losing queue places on failover matter?", RUBRIC)
-    chosen = await scorer.choose("What kind of objection is this?", ["factual", "design"])
-    confirmed = await scorer.yes_no("Is this a blocker?")
+    lost = "Queue places are lost on failover."
+    scored = await scorer.score(lost, "How much does it matter?", RUBRIC)
+    chosen = await scorer.choose(lost, "What kind of objection is this?", ["factual", "design"])
+    confirmed = await scorer.yes_no(lost, "Is this a blocker?")
 
     assert (scored.value, scored.confidence) == (1.0, 0.9)
     assert (chosen.value, chosen.confidence) == ("factual", 0.6)

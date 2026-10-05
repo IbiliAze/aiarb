@@ -17,6 +17,7 @@ def context(repo: Path, charter: Charter | None = None) -> RunContext:
         repo=repo,
         agent=ScriptedCodeAgent([]),
         scorer=ScriptedScorer([]),
+        confirmer=ScriptedScorer([]),
     )
 
 

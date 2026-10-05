@@ -87,13 +87,13 @@
 
 ## 10. Scoring
 
-- [ ] Implement the Jev adapter with the rubric as score levels
-- [ ] Implement the language-model fallback scorer
-- [ ] Escalate to the fallback when confidence is below the charter threshold
-- [ ] Wire triage: minors skip debate, the rest are ordered by severity
-- [ ] Wire rescoring of open items after the debate
-- [ ] Flag items whose severity dropped without being withdrawn
-- [ ] Confirm blocker and "not ready" calls with a language model
+- [x] Implement the Jev adapter with the rubric as score levels
+- [x] Implement the language-model fallback scorer
+- [x] Escalate to the fallback when confidence is below the charter threshold
+- [x] Wire triage: minors skip debate, the rest are ordered by severity
+- [x] Wire rescoring of open items after the debate
+- [x] Flag items whose severity dropped without being withdrawn
+- [x] Confirm blocker and "not ready" calls with a language model
 
 ## 11. Output
 

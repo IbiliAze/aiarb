@@ -32,6 +32,7 @@ from aiarb.adapters.claude_code import (
     read_only_hook,
     refusal,
 )
+from aiarb.adapters.llm_scorer import _choice_among
 from aiarb.config.charter import Charter
 from aiarb.ports.calls import CallError, Cost, FatalCallError, RetryableCallError
 from aiarb.ports.code_agent import AgentRequest, CodeAgent
@@ -569,10 +570,14 @@ class TestTheAnswerSchema:
 
 
 ANSWER_SCHEMAS = [
-    model
-    for _, model in inspect.getmembers(outputs, inspect.isclass)
-    if issubclass(model, outputs._Output) and model is not outputs._Output
+    *(
+        model
+        for _, model in inspect.getmembers(outputs, inspect.isclass)
+        if issubclass(model, outputs._Output) and model is not outputs._Output
+    ),
+    _choice_among(("factual", "design", "trade_off")),
 ]
+"""Every schema an agent answers with, including a choice among given options."""
 
 
 async def test_claude_code_accepts_every_answer_schema(tmp_path: Path) -> None:

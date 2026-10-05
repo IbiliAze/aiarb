@@ -38,6 +38,7 @@ def runtime(repo: Path, max_rounds: int = 4) -> Runtime[RunContext]:
             repo=repo,
             agent=ScriptedCodeAgent([]),
             scorer=ScriptedScorer([]),
+            confirmer=ScriptedScorer([]),
         )
     )
 

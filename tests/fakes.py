@@ -141,37 +141,41 @@ class ScriptedCodeAgent:
 
 
 class ScriptedScorer:
-    """A Scorer that answers from a script and records every question."""
+    """A Scorer that answers from a script and records every question.
+
+    A step's `contains` is matched against the subject and the question together.
+    """
 
     def __init__(self, steps: Sequence[ScorerStep]) -> None:
         self._script = _Script(steps)
-        self.calls: list[tuple[str, str]] = []
-        """(call, question) for every call made."""
+        self.calls: list[tuple[str, str, str]] = []
+        """(call, subject, question) for every call made."""
 
-    async def score(self, question: str, levels: Sequence[Level]) -> Judgement[float]:
+    async def score(self, subject: str, question: str, levels: Sequence[Level]) -> Judgement[float]:
         check_levels(levels)
-        step = self._take("score", question)
+        step = self._take("score", subject, question)
         assert isinstance(step.value, float | int)
         return Judgement(value=float(step.value), confidence=step.confidence, cost=step.cost)
 
-    async def choose(self, question: str, options: Sequence[str]) -> Judgement[str]:
+    async def choose(self, subject: str, question: str, options: Sequence[str]) -> Judgement[str]:
         check_options(options)
-        step = self._take("choose", question)
+        step = self._take("choose", subject, question)
         if step.value not in options:
             raise ScriptError(f"scripted choice {step.value!r} is not one of {list(options)}")
         assert isinstance(step.value, str)
         return Judgement(value=step.value, confidence=step.confidence, cost=step.cost)
 
-    async def yes_no(self, question: str) -> Judgement[bool]:
-        step = self._take("yes_no", question)
+    async def yes_no(self, subject: str, question: str) -> Judgement[bool]:
+        step = self._take("yes_no", subject, question)
         assert isinstance(step.value, bool)
         return Judgement(value=step.value, confidence=step.confidence, cost=step.cost)
 
-    def _take(self, call: str, question: str) -> ScorerStep:
-        self.calls.append((call, question))
+    def _take(self, call: str, subject: str, question: str) -> ScorerStep:
+        self.calls.append((call, subject, question))
+        text = f"{subject}\n{question}"
         step = self._script.take(
-            f"a {call} call asking {_preview(question)}",
-            lambda step: step.call == call and step.matches_text(question),
+            f"a {call} call asking {_preview(question)} of {_preview(subject)}",
+            lambda step: step.call == call and step.matches_text(text),
         )
         if step.error is not None:
             raise step.fail()

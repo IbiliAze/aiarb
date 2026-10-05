@@ -274,6 +274,41 @@ class TestRescore:
             in_status(status).rescore(Severity.MINOR, round=3, note="Lower.")
 
 
+class TestSeverityDrops:
+    def test_the_peak_counts_only_the_scorers_ratings(self) -> None:
+        item = raised(severity=Severity.BLOCKER)
+
+        assert item.peak_severity is None
+        assert item.dropped_from is None
+
+    def test_an_open_item_rated_lower_than_before_has_dropped(self) -> None:
+        item = raised().rescore(Severity.BLOCKER, round=0, note="Scored.")
+
+        dropped = item.rescore(Severity.MODERATE, round=3, note="Lower after the debate.")
+
+        assert dropped.peak_severity is Severity.BLOCKER
+        assert dropped.dropped_from is Severity.BLOCKER
+
+    def test_rising_again_clears_the_drop(self) -> None:
+        item = raised().rescore(Severity.MAJOR, round=0, note="Scored.")
+
+        back = item.rescore(Severity.MINOR, round=2, note="Lower.").rescore(
+            Severity.MAJOR, round=3, note="Higher."
+        )
+
+        assert back.dropped_from is None
+
+    def test_a_settled_item_has_not_dropped_whatever_its_severity(self) -> None:
+        item = raised().rescore(Severity.BLOCKER, round=0, note="Scored.")
+        lower = item.rescore(Severity.MAJOR, round=1, note="Lower.")
+
+        settled = lower.transition(
+            Status.ANSWERED, actor=Actor.PLANNER, round=2, note="Fixed."
+        ).transition(Status.RESOLVED, actor=Actor.CRITIC, round=2, note="OK.", resolution=FIXED)
+
+        assert settled.dropped_from is None
+
+
 @pytest.mark.parametrize(
     ("status", "is_open"),
     [

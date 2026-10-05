@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from aiarb.domain.ledger import Actor, Status
 from aiarb.graph import prompts
-from aiarb.graph.nodes._calls import ask, by_id, in_status
+from aiarb.graph.nodes._calls import ask, by_id, by_severity, in_status
 from aiarb.schemas.outputs import Accept, Rulings
 
 if TYPE_CHECKING:
@@ -18,7 +18,7 @@ _VERDICTS = {"accept": Status.RESOLVED, "reject": Status.OPEN, "dispute": Status
 
 async def rule(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     """The critic accepts, rejects or disputes each of the planner's answers."""
-    answered = in_status(state, Status.ANSWERED)
+    answered = by_severity(in_status(state, Status.ANSWERED))
     if not answered:
         return {}
     result = await ask(

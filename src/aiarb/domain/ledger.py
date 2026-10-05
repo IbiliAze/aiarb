@@ -273,6 +273,25 @@ class Objection:
         return self.status.is_open
 
     @property
+    def peak_severity(self) -> Severity | None:
+        """The highest severity the scorer has given this objection, if it has scored it."""
+        scored = [event.severity for event in self.history if event.actor is Actor.SCORER]
+        return max(scored, key=lambda severity: severity.rank, default=None)
+
+    @property
+    def dropped_from(self) -> Severity | None:
+        """The scorer's highest severity for this objection, when it is still open
+        and now rated lower.
+
+        Nobody settled it, so the drop deserves a second look. Only the scorer's
+        ratings count: the critic's, given when raising it, is one side's view.
+        """
+        peak = self.peak_severity
+        if self.is_open and peak is not None and peak.rank > self.severity.rank:
+            return peak
+        return None
+
+    @property
     def resolution(self) -> Resolution | None:
         return self.history[-1].resolution if self.status is Status.RESOLVED else None
 

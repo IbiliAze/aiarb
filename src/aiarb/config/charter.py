@@ -45,7 +45,8 @@ class Models(_Section):
     verifier: ModelId = "claude-sonnet-5-5"
     explainer: ModelId = "claude-sonnet-5-5"
     scorer: ModelId = "claude-sonnet-5-5"
-    """Used by the language-model scorer, whether chosen or as Jev's fallback."""
+    """Used by the language-model scorer, whether chosen or as Jev's fallback, and
+    to confirm blocker calls."""
 
     @model_validator(mode="after")
     def _critic_differs_from_planner(self) -> "Models":
@@ -64,7 +65,8 @@ class Debate(_Section):
 class Scoring(_Section):
     provider: Literal["jev", "llm"] = "llm"
     confidence_threshold: float = Field(default=0.7, ge=0, le=1)
-    """Below this confidence, a language model confirms the score."""
+    """Below this confidence, a language model scores again what Jev scored. A
+    language model's doubt that a blocker is one counts only at this confidence."""
     thresholds: SeverityThresholds = SeverityThresholds()
 
 

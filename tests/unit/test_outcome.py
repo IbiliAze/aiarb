@@ -110,3 +110,15 @@ def test_an_open_blocker_means_not_ready(status: Status) -> None:
     assert result.exit_code == 2
     assert result.open_items == (blocker, minor)
     assert result.blockers == (blocker,)
+
+
+def test_open_items_the_scorer_rated_lower_are_listed_as_downgraded() -> None:
+    scored = item("OBJ-1", Status.DEFERRED).rescore(Severity.BLOCKER, round=1, note="Scored.")
+    dropped = scored.rescore(Severity.MAJOR, round=2, note="Lower.")
+    steady = item("OBJ-2", Status.DEFERRED).rescore(Severity.MAJOR, round=1, note="Scored.")
+
+    result = outcome(ledger(dropped, steady))
+
+    assert result.downgraded == (dropped,)
+    assert result.blockers == ()
+    assert result.status is RunStatus.SETTLED_WITH_OPEN_ITEMS

@@ -1,5 +1,6 @@
 # A blocker the verifier cannot settle from the code. It leaves the debate as a
-# task, but is still a blocker after rescoring: not ready, exit 2.
+# task, but is still a blocker after rescoring, which a language model confirms:
+# not ready, exit 2.
 agent:
   - schema: PlanDraft
     output: {plan: "# Queue\n\nStore queue places in the sessions table."}
@@ -27,3 +28,4 @@ agent:
 scorer:
   - {call: score, contains: OBJ-1, value: 0.9}
   - {call: score, contains: OBJ-1, value: 0.85}
+  - {call: yes_no, contains: OBJ-1, value: true, confidence: 0.9}

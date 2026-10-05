@@ -4,7 +4,7 @@ from typing import TYPE_CHECKING
 
 from aiarb.domain.ledger import Actor, Status
 from aiarb.graph import prompts
-from aiarb.graph.nodes._calls import ask, by_id, in_status
+from aiarb.graph.nodes._calls import ask, by_id, by_severity, in_status
 from aiarb.schemas.outputs import Responses
 
 if TYPE_CHECKING:
@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 async def respond(state: RunState, runtime: Runtime[RunContext]) -> StateUpdate:
     """Start a round: the planner fixes or rebuts every open objection."""
     round = state["round"] + 1
-    open_items = in_status(state, Status.OPEN)
+    open_items = by_severity(in_status(state, Status.OPEN))
     if not open_items:
         return {}
     notes = in_status(state, Status.NOTED)

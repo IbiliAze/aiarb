@@ -37,7 +37,7 @@ def store(tmp_path: Path) -> SqliteRunStore:
 
 def context(repo: Path, agent: CodeAgent, scorer: Scorer, max_rounds: int = 4) -> RunContext:
     charter = Charter.model_validate({"debate": {"max_rounds": max_rounds}})
-    return RunContext(charter=charter, repo=repo, agent=agent, scorer=scorer)
+    return RunContext(charter=charter, repo=repo, agent=agent, scorer=scorer, confirmer=scorer)
 
 
 def scenario_context(repo: Path, name: str, max_rounds: int = 4) -> tuple[RunContext, Scenario]:

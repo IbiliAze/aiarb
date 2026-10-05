@@ -31,6 +31,10 @@ class RunContext:
     """The target repo, as an absolute path."""
     agent: Annotated[CodeAgent, SkipJsonSchema()]
     scorer: Annotated[Scorer, SkipJsonSchema()]
+    """Rates each objection's impact, before and after the debate."""
+    confirmer: Annotated[Scorer, SkipJsonSchema()]
+    """A language model that confirms blocker calls, which decide that a plan is
+    not ready. It may be the scorer itself."""
 
     def __post_init__(self) -> None:
         if not self.repo.is_dir():

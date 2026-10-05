@@ -41,7 +41,13 @@ async def run(
 ) -> RunState:
     """Run a scenario in memory, giving `decisions` if it pauses for them."""
     rules = charter(max_rounds)
-    context = RunContext(charter=rules, repo=repo, agent=scenario.agent, scorer=scenario.scorer)
+    context = RunContext(
+        charter=rules,
+        repo=repo,
+        agent=scenario.agent,
+        scorer=scenario.scorer,
+        confirmer=scenario.scorer,
+    )
     graph = build_graph(
         checkpointer=InMemorySaver(serde=checkpoint_serializer()), retry_policy=retry_policy
     )
@@ -151,6 +157,21 @@ class TestScenarios:
         assert item.severity is Severity.BLOCKER
         assert final["status"] is RunStatus.NOT_READY
         assert final["status"].exit_code == 2
+
+    async def test_a_blocker_a_language_model_rejects_is_flagged_instead(
+        self, tmp_path: Path
+    ) -> None:
+        data = yaml.safe_load((SCENARIOS / "blocker_left_open.yaml").read_text())
+        data["scorer"][-1] = {"call": "yes_no", "value": False, "confidence": 0.9}
+        scenario = Scenario.from_data(data)
+
+        final = await run(tmp_path, scenario)
+
+        scenario.assert_finished()
+        item = final["ledger"]["OBJ-1"]
+        assert item.severity is Severity.MAJOR
+        assert item.dropped_from is Severity.BLOCKER
+        assert final["status"] is RunStatus.SETTLED_WITH_OPEN_ITEMS
 
 
 def worst_case(rounds: int, type: str) -> Scenario:
@@ -315,8 +336,9 @@ class TestTimeouts:
     ) -> None:
         monkeypatch.setitem(builder.TIMEOUTS, "draft_plan", 0.05)
         agent = StuckAgent()
+        unused = ScriptedScorer([])
         context = RunContext(
-            charter=Charter(), repo=tmp_path, agent=agent, scorer=ScriptedScorer([])
+            charter=Charter(), repo=tmp_path, agent=agent, scorer=unused, confirmer=unused
         )
 
         with pytest.raises(NodeTimeoutError):

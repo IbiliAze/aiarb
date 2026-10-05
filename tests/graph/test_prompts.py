@@ -7,7 +7,7 @@ import pytest
 
 from aiarb.config.charter import Charter
 from aiarb.domain.ledger import Actor, ObjectionType, Status
-from aiarb.domain.scoring import Severity
+from aiarb.domain.scoring import RUBRIC, Severity
 from aiarb.graph import prompts
 from aiarb.graph.state import initial_state
 from tests.graph.test_nodes import objection
@@ -22,7 +22,7 @@ CHARTER = Charter.model_validate(
         "constraints": ["no new managed services"],
     }
 )
-ROLES: list[Role] = ["planner", "critic", "verifier", "judge", "explainer"]
+ROLES: list[Role] = ["planner", "critic", "verifier", "judge", "explainer", "scorer"]
 
 
 def state(*items: Objection, round: int = 0, **fields: Any) -> RunState:
@@ -189,6 +189,25 @@ class TestTheOthers:
 
     def test_the_explainer_is_told_when_nothing_was_raised(self) -> None:
         assert "<objections>\nNone were raised.\n</objections>" in prompts.explain(state())
+
+
+class TestTheScorer:
+    def test_is_shown_the_objection_with_its_debate_and_the_charter(self) -> None:
+        text = prompts.scored(disputed(), CHARTER)
+
+        assert text.startswith("OBJ-2 (factual, major, disputed): Claim OBJ-2.")
+        assert "Round 1, planner: Rebuttal: Redis is used for sessions." in text
+        assert text.endswith(
+            "The charter for this codebase:\nPriorities, from 1 (matters a little) to 5 "
+            "(matters most):\n- data integrity: 5\n- running cost: 2\nConstraints every "
+            "plan must keep to:\n- no new managed services"
+        )
+
+    def test_is_asked_about_harm_not_who_is_right(self) -> None:
+        assert "not whether the objection is right" in prompts.IMPACT
+
+    def test_confirms_a_blocker_against_the_rubrics_own_words(self) -> None:
+        assert prompts.IS_BLOCKER.endswith(RUBRIC[Severity.BLOCKER])
 
 
 def test_inputs_are_trimmed_inside_their_tags() -> None:

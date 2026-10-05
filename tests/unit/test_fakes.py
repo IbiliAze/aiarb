@@ -174,17 +174,17 @@ class TestScriptedScorer:
             ]
         )
 
-        scored = await scorer.score("How much does OBJ-1 matter?", RUBRIC)
-        chosen = await scorer.choose("What kind is OBJ-1?", ["factual", "design"])
-        confirmed = await scorer.yes_no("Is OBJ-1 a blocker?")
+        scored = await scorer.score("OBJ-1: queue places are lost.", "How much?", RUBRIC)
+        chosen = await scorer.choose("OBJ-1", "What kind?", ["factual", "design"])
+        confirmed = await scorer.yes_no("OBJ-1", "Is it a blocker?")
 
         assert (scored.value, scored.confidence, scored.cost) == (0.7, 0.9, Cost(usd=0.01))
         assert (chosen.value, chosen.confidence) == ("design", 0.6)
         assert (confirmed.value, confirmed.confidence) == (True, 1.0)
-        assert [call for call, _ in scorer.calls] == ["score", "choose", "yes_no"]
+        assert [call for call, _, _ in scorer.calls] == ["score", "choose", "yes_no"]
         scorer.assert_finished()
 
-    async def test_matches_steps_by_question_text(self) -> None:
+    async def test_matches_steps_by_the_subject_and_question(self) -> None:
         scorer = ScriptedScorer(
             [
                 scorer_step(call="score", contains="OBJ-2", value=0.2),
@@ -192,13 +192,13 @@ class TestScriptedScorer:
             ]
         )
 
-        assert (await scorer.score("Rate OBJ-1.", RUBRIC)).value == 0.9
-        assert (await scorer.score("Rate OBJ-2.", RUBRIC)).value == 0.2
+        assert (await scorer.score("OBJ-1", "Rate it.", RUBRIC)).value == 0.9
+        assert (await scorer.score("An objection.", "Rate OBJ-2.", RUBRIC)).value == 0.2
 
     async def test_a_whole_number_score_is_a_float(self) -> None:
         scorer = ScriptedScorer([scorer_step(call="score", value=1)])
 
-        result = await scorer.score("Rate it.", RUBRIC)
+        result = await scorer.score("OBJ-1", "Rate it.", RUBRIC)
 
         assert result.value == 1.0
         assert isinstance(result.value, float)
@@ -207,19 +207,19 @@ class TestScriptedScorer:
         scorer = ScriptedScorer([scorer_step(call="choose", value="opinion")])
 
         with pytest.raises(ScriptError, match="'opinion' is not one of"):
-            await scorer.choose("What kind?", ["factual", "design"])
+            await scorer.choose("OBJ-1", "What kind?", ["factual", "design"])
 
     async def test_bad_input_is_refused_as_a_real_scorer_would(self) -> None:
         scorer = ScriptedScorer([scorer_step(call="score", value=0.5)])
 
         with pytest.raises(ValueError, match="at least two levels"):
-            await scorer.score("Rate it.", RUBRIC[:1])
+            await scorer.score("OBJ-1", "Rate it.", RUBRIC[:1])
 
     async def test_a_step_can_fail(self) -> None:
         scorer = ScriptedScorer([scorer_step(call="yes_no", error="retryable")])
 
         with pytest.raises(RetryableCallError):
-            await scorer.yes_no("Is it a blocker?")
+            await scorer.yes_no("OBJ-1", "Is it a blocker?")
 
     @pytest.mark.parametrize(
         ("fields", "message"),
@@ -259,7 +259,7 @@ class TestScenario:
 
         scenario = Scenario.from_yaml(path)
         plan = await scenario.agent.run(ask(PlanDraft))
-        scored = await scenario.scorer.score("Rate OBJ-1.", RUBRIC)
+        scored = await scenario.scorer.score("OBJ-1", "Rate it.", RUBRIC)
 
         assert plan.output == PlanDraft(summary="Add a waiting room.")
         assert plan.cost == Cost(usd=1.5, input_tokens=1000, output_tokens=200)

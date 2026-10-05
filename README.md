@@ -105,13 +105,14 @@ models:
   judge: <model-id> # takes no part in the debate
   verifier: <model-id> # a smaller model is fine
   explainer: <model-id> # a smaller model is fine
+  scorer: <model-id> # scores when Jev is not used, and confirms blockers
 
 debate:
   max_rounds: 4
 
 scoring:
   provider: jev # or: llm
-  confidence_threshold: 0.7 # below this, a language model confirms the score
+  confidence_threshold: 0.7 # below this, a language model rescores Jev's answer
 
 priorities: # what matters in this codebase, and how much
   data_integrity: 5
@@ -142,6 +143,11 @@ Model IDs are any that Claude Code accepts. The planner and critic must be diffe
 | Scorer    | Rates each objection's impact, before and after the debate |
 
 The scorer uses [Jev](https://typesafe.ai) when configured, with a language model as fallback. It rates how much an objection matters. It never decides who is right.
+
+- With `provider: jev`, any score Jev gives with less confidence than `confidence_threshold` is scored again by a language model. Set `TYPESAFE_API_KEY` to use Jev.
+- With `provider: llm`, a language model scores everything.
+- Either way, a language model confirms every blocker left after the debate, since one blocker makes the run "not ready". The blocker stands unless the model is confident it is not one.
+- An open item rated lower after the debate than before, though nobody settled it, is flagged for a second look.
 
 ## What you get
 
@@ -201,7 +207,7 @@ uv run pytest
 
 The full graph runs in tests on fake adapters, so the test suite makes no API calls.
 
-The Claude Code adapter also has live tests, which run real Claude Code on Haiku and cost a few cents:
+There are also live tests, which run each role and scorer through real Claude Code, mostly on Haiku, and call Jev when `TYPESAFE_API_KEY` is set. A full live run costs about a dollar:
 
 ```bash
 AIARB_LIVE_TESTS=1 uv run pytest tests/live

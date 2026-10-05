@@ -107,7 +107,8 @@ def repo(tmp_path: Path) -> Path:
 
 def runtime(repo: Path) -> Runtime[RunContext]:
     agent = ClaudeCodeAgent.from_charter(CHARTER)
-    context = RunContext(charter=CHARTER, repo=repo, agent=agent, scorer=ScriptedScorer([]))
+    unused = ScriptedScorer([])
+    context = RunContext(charter=CHARTER, repo=repo, agent=agent, scorer=unused, confirmer=unused)
     return Runtime(context=context)
 
 
