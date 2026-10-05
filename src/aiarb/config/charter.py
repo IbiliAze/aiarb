@@ -5,11 +5,23 @@ refused rather than ignored, so a typo fails loudly instead of silently falling
 back to a default.
 """
 
+from pathlib import Path
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+import yaml
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    ValidationError,
+    model_validator,
+)
 
 from aiarb.domain.scoring import SeverityThresholds
+
+CHARTER_PATH = Path(".aiarb/charter.yaml")
+"""Where the charter lives, relative to the root of the target repo."""
 
 ModelId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 PriorityName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]*$")]
@@ -76,3 +88,35 @@ class Charter(_Section):
     constraints: tuple[Constraint, ...] = ()
     """Rules every plan must respect, such as "no new managed services"."""
     budget: Budget = Budget()
+
+
+class CharterError(Exception):
+    """The charter file exists but cannot be used."""
+
+    def __init__(self, path: Path, reason: str) -> None:
+        super().__init__(f"{path}: {reason}")
+        self.path = path
+        self.reason = reason
+
+
+def load_charter(repo: Path) -> Charter:
+    """Load the repo's charter, or the defaults if it has none."""
+    path = repo / CHARTER_PATH
+    if not path.exists():
+        return Charter()
+    try:
+        data = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except OSError as error:
+        raise CharterError(path, f"cannot be read: {error.strerror or error}") from error
+    except UnicodeDecodeError as error:
+        raise CharterError(path, "is not UTF-8 text") from error
+    except yaml.YAMLError as error:
+        raise CharterError(path, f"is not valid YAML: {error}") from error
+    if data is None:
+        return Charter()
+    if not isinstance(data, dict):
+        raise CharterError(path, f"must be a mapping of sections, not a {type(data).__name__}")
+    try:
+        return Charter.model_validate(data)
+    except ValidationError as error:
+        raise CharterError(path, str(error)) from error

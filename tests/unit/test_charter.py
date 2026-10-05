@@ -1,9 +1,11 @@
+from pathlib import Path
 from typing import Any
 
 import pytest
+import yaml
 from pydantic import ValidationError
 
-from aiarb.config.charter import Charter
+from aiarb.config.charter import CHARTER_PATH, Charter, CharterError, load_charter
 from aiarb.domain.scoring import SeverityThresholds
 
 # The example charter from the README, with placeholder model IDs filled in.
@@ -99,3 +101,65 @@ def test_the_charter_cannot_be_changed_after_loading() -> None:
 def test_invalid_charters_are_refused(data: dict[str, Any], message: str) -> None:
     with pytest.raises(ValidationError, match=message):
         Charter.model_validate(data)
+
+
+def write_charter(repo: Path, content: str | bytes) -> Path:
+    path = repo / CHARTER_PATH
+    path.parent.mkdir(parents=True)
+    if isinstance(content, bytes):
+        path.write_bytes(content)
+    else:
+        path.write_text(content, encoding="utf-8")
+    return path
+
+
+class TestLoadCharter:
+    def test_a_repo_without_a_charter_gets_the_defaults(self, tmp_path: Path) -> None:
+        assert load_charter(tmp_path) == Charter()
+
+    @pytest.mark.parametrize("content", ["", "\n", "# nothing configured yet\n"])
+    def test_an_empty_charter_file_gets_the_defaults(self, tmp_path: Path, content: str) -> None:
+        write_charter(tmp_path, content)
+
+        assert load_charter(tmp_path) == Charter()
+
+    def test_the_readme_example_loads_from_yaml(self, tmp_path: Path) -> None:
+        write_charter(tmp_path, yaml.safe_dump(README_CHARTER))
+
+        assert load_charter(tmp_path) == Charter.model_validate(README_CHARTER)
+
+    def test_a_partial_charter_keeps_the_other_defaults(self, tmp_path: Path) -> None:
+        write_charter(tmp_path, "debate:\n  max_rounds: 6\n")
+
+        charter = load_charter(tmp_path)
+
+        assert charter.debate.max_rounds == 6
+        assert charter.models == Charter().models
+
+    @pytest.mark.parametrize(
+        ("content", "reason"),
+        [
+            ("debate: [max_rounds: 4", "is not valid YAML"),
+            ("- models\n- debate\n", "must be a mapping of sections, not a list"),
+            ("just some text", "must be a mapping of sections, not a str"),
+            ("debate:\n  max_rounds: 0\n", "greater than or equal to 1"),
+            ("budjet:\n  per_run: 60\n", "Extra inputs are not permitted"),
+            (b"debate:\n  note: \xff\xfe\n", "is not UTF-8 text"),
+        ],
+    )
+    def test_an_unusable_charter_names_the_file_and_the_reason(
+        self, tmp_path: Path, content: str | bytes, reason: str
+    ) -> None:
+        path = write_charter(tmp_path, content)
+
+        with pytest.raises(CharterError, match=reason) as caught:
+            load_charter(tmp_path)
+
+        assert caught.value.path == path
+        assert str(caught.value).startswith(f"{path}: ")
+
+    def test_an_unreadable_charter_is_an_error(self, tmp_path: Path) -> None:
+        (tmp_path / CHARTER_PATH).mkdir(parents=True)
+
+        with pytest.raises(CharterError, match="cannot be read"):
+            load_charter(tmp_path)
