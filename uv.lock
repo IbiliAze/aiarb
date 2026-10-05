@@ -10,7 +10,7 @@ resolution-markers = [
 
 [[package]]
 name = "aiarb"
-version = "0.0.1"
+version = "1.0.0"
 source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },

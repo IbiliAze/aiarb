@@ -2,7 +2,7 @@
 
 **An AI architecture review board for your codebase.** Give it a feature you want to add to an existing app. One model plans it, another attacks the plan, and they argue it out against your actual code until the plan is settled. You get one polished plan, a plain-English record of every objection, and a short list of the decisions only you can make.
 
-> **Status: pre-release.** aiarb is under active development and not yet published. See [`aiarb-v1-todo.md`](./aiarb-v1-todo.md) for progress.
+> **Status: 1.0.0.** aiarb is not on PyPI: install it from GitHub, as below.
 
 ## Why
 
@@ -14,6 +14,19 @@ aiarb runs that argument for you, under rules:
 - An objection closes only when the plan changes or evidence settles it. "You're right" is not a resolution.
 - Factual disputes are checked against the repo, not argued.
 - Real trade-offs are brought to you as plain-English questions, not settled silently.
+
+## What is an architecture review board?
+
+In larger engineering organisations, an architecture review board is a group of senior engineers who look at significant designs before they are built. They check a proposal against the system as it really is, the organisation's standards and what the business cares about, and they catch the expensive mistakes while they are still cheap to fix: the queue that loses data on deploy, the table that locks at peak, the new service nobody can run.
+
+Their weakness is that they are slow and scarce. A design waits for the next meeting, and small changes never get reviewed at all.
+
+aiarb gives you that review on demand, with two differences:
+
+- **It writes the plan as well as judging it.** The board drafts the plan, attacks it and repairs it, so you get a revised plan rather than a list of complaints.
+- **It knows what it cannot decide.** Questions of fact are checked against the code. Questions of priority, such as fairness against speed, come to you, because only you know the answer.
+
+It is not a change advisory board (CAB). A CAB approves a finished change for release. aiarb works earlier, at design time, where the question is how to build something.
 
 ## How it works
 
@@ -57,16 +70,29 @@ The planner and critic each run inside [Claude Code](https://docs.claude.com/en/
 
 ## Install
 
+aiarb is not published to PyPI. Install it from GitHub with [pipx](https://pipx.pypa.io):
+
 ```bash
-pipx install aiarb
+pipx install git+https://github.com/IbiliAze/aiarb@v1.0.0
 ```
 
-Then set your keys:
+Or from a clone:
+
+```bash
+git clone https://github.com/IbiliAze/aiarb && cd aiarb
+pipx install .
+```
+
+`uv tool install` works in place of `pipx install` in both.
+
+If Claude Code is signed in, aiarb uses that. Otherwise, set an API key:
 
 ```bash
 export ANTHROPIC_API_KEY=...
-export TYPESAFE_API_KEY=...   # optional
+export TYPESAFE_API_KEY=...   # optional, to score with Jev
 ```
+
+Check the install with `aiarb --version`.
 
 ## Quick start
 
@@ -104,7 +130,7 @@ aiarb resume --evidence OBJ-1=@load-test-results.md
 | Command        | What it does                                                              |
 | -------------- | ------------------------------------------------------------------------- |
 | `aiarb`        | Interactive mode                                                          |
-| `aiarb init`   | Write a starter charter to `.aiarb/charter.yaml`, and keep runs out of git |
+| `aiarb init`   | Write a starter charter to `.aiarb/charter.yaml`, and keep runs out of git. Options: `--jev`/`--llm` for the scorer (default: Jev if `TYPESAFE_API_KEY` is set), `--force` to replace a charter |
 | `aiarb plan`   | Start a run. Options: `--feature`, `--plan` (repeatable), `--max-rounds`, `--no-input` |
 | `aiarb resume` | Continue a paused or stopped run. Options: `--decide ID=...` and `--evidence ID=...` (both repeatable), `--max-rounds` for a reopened debate, `--no-input` |
 
@@ -112,7 +138,7 @@ aiarb resume --evidence OBJ-1=@load-test-results.md
 
 ## The charter
 
-`.aiarb/charter.yaml` is committed to your repo and defines how the board behaves there.
+`.aiarb/charter.yaml` is committed to your repo and defines how the board behaves there. `aiarb init` writes one with every default spelled out. For example:
 
 ```yaml
 models:
@@ -127,7 +153,7 @@ debate:
   max_rounds: 4
 
 scoring:
-  provider: jev # or: llm
+  provider: llm # or: jev, with TYPESAFE_API_KEY set
   confidence_threshold: 0.7 # below this, a language model rescores Jev's answer
 
 priorities: # what matters in this codebase, and how much
@@ -144,6 +170,27 @@ budget:
   per_call: 10 # spend cap per agent call
   per_run: 60 # the run stops cleanly and stays resumable
 ```
+
+Every setting is optional, and an empty charter is valid. Unknown keys are refused, so a typo fails loudly instead of quietly falling back to a default.
+
+| Setting                        | Default             | Meaning |
+| ------------------------------ | ------------------- | ------- |
+| `models.planner`               | `claude-opus-5-5`   | Drafts and revises the plan. Use your strongest model |
+| `models.critic`                | `claude-sonnet-5-5` | Raises objections and rules on answers. Must differ from the planner |
+| `models.judge`                 | `claude-opus-5-5`   | Rules on design deadlocks left at the round limit |
+| `models.verifier`              | `claude-sonnet-5-5` | Checks disputed facts against the code |
+| `models.explainer`             | `claude-sonnet-5-5` | Writes the ledger in plain English |
+| `models.scorer`                | `claude-sonnet-5-5` | Scores impact when Jev is not used, and confirms blockers |
+| `debate.max_rounds`            | `4`                 | Rounds before leftover items go to the judge or to you. `--max-rounds` overrides it for one run |
+| `scoring.provider`             | `llm`               | `llm`, or `jev` with `TYPESAFE_API_KEY` set |
+| `scoring.confidence_threshold` | `0.7`               | Below this confidence, a language model scores Jev's answer again, and a language model's doubt about a blocker does not count |
+| `scoring.thresholds.moderate`  | `0.25`              | The impact score, from 0 to 1, where moderate starts. Anything lower is minor and skips the debate |
+| `scoring.thresholds.major`     | `0.5`               | Where major starts |
+| `scoring.thresholds.blocker`   | `0.8`               | Where blocker starts. One open blocker makes a plan "not ready" |
+| `priorities`                   | none                | What matters in this codebase, as `name: weight` from 1 (a little) to 5 (most). Names are lower case with underscores |
+| `constraints`                  | none                | Rules every plan must keep to, one per line |
+| `budget.per_call`              | `10`                | The most one agent call may spend, in US dollars |
+| `budget.per_run`               | `60`                | The most one run may spend, in US dollars. At least `per_call` |
 
 Model IDs are any that Claude Code accepts. The planner and critic must be different models: a model reviewing its own plan shares its own blind spots.
 
@@ -218,10 +265,6 @@ Measured on real repos, with Opus 5.5 as planner and Sonnet 5.5 in every other r
 
 These were small features: the critic's only objection each time was minor, so there was no debate. The planner's draft was 65–80% of the cost. Each round of debate adds a planner and a critic turn, which took one to two minutes and around $0.15 in smaller test runs. Expect a large feature on a large codebase to take much longer, and set `budget.per_run` to match.
 
-## Is this a CAB?
-
-No. A change advisory board authorises a finished change for release. aiarb works earlier, at design time, where the question is how to build something. It is closer to an architecture review board, with one difference: it produces and repairs the plan as well as judging it.
-
 ## Roadmap
 
 - Multiple planners that each draft a plan, then converge on a merged one
@@ -232,7 +275,7 @@ No. A change advisory board authorises a finished change for release. aiarb work
 ## Development
 
 ```bash
-git clone <repo-url> && cd aiarb
+git clone https://github.com/IbiliAze/aiarb && cd aiarb
 uv sync
 uv run pytest
 ```

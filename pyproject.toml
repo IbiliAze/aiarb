@@ -1,6 +1,6 @@
 [project]
 name = "aiarb"
-version = "0.0.1"
+version = "1.0.0"
 description = "An AI architecture review board for your codebase."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -9,7 +9,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Ibi Hasanli" }]
 keywords = ["architecture", "planning", "code-review", "llm", "agents", "claude"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Programming Language :: Python :: 3",
