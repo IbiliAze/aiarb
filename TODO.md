@@ -63,7 +63,7 @@
 
 ## 7. Repo scan
 
-- [ ] Write collectors: stack, dependencies, tests, infrastructure files, CI config, git churn
+- [x] Write collectors: stack, dependencies, tests, infrastructure files, CI config, git churn
 - [ ] Assemble and cache the fact sheet, keyed on the commit hash
 - [ ] Test against the fixture repos
 
