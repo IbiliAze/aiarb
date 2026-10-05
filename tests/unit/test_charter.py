@@ -136,30 +136,169 @@ class TestLoadCharter:
         assert charter.debate.max_rounds == 6
         assert charter.models == Charter().models
 
-    @pytest.mark.parametrize(
-        ("content", "reason"),
-        [
-            ("debate: [max_rounds: 4", "is not valid YAML"),
-            ("- models\n- debate\n", "must be a mapping of sections, not a list"),
-            ("just some text", "must be a mapping of sections, not a str"),
-            ("debate:\n  max_rounds: 0\n", "greater than or equal to 1"),
-            ("budjet:\n  per_run: 60\n", "Extra inputs are not permitted"),
-            (b"debate:\n  note: \xff\xfe\n", "is not UTF-8 text"),
-        ],
-    )
-    def test_an_unusable_charter_names_the_file_and_the_reason(
-        self, tmp_path: Path, content: str | bytes, reason: str
-    ) -> None:
-        path = write_charter(tmp_path, content)
-
-        with pytest.raises(CharterError, match=reason) as caught:
-            load_charter(tmp_path)
-
-        assert caught.value.path == path
-        assert str(caught.value).startswith(f"{path}: ")
-
     def test_an_unreadable_charter_is_an_error(self, tmp_path: Path) -> None:
         (tmp_path / CHARTER_PATH).mkdir(parents=True)
 
         with pytest.raises(CharterError, match="cannot be read"):
             load_charter(tmp_path)
+
+    def test_a_section_with_everything_commented_out_uses_its_defaults(
+        self, tmp_path: Path
+    ) -> None:
+        write_charter(tmp_path, "debate:\n  # max_rounds: 6\nmodels:\n")
+
+        assert load_charter(tmp_path) == Charter()
+
+
+def charter_error(repo: Path, content: str | bytes) -> CharterError:
+    write_charter(repo, content)
+    with pytest.raises(CharterError) as caught:
+        load_charter(repo)
+    return caught.value
+
+
+class TestClearErrors:
+    """What the user sees when the charter is wrong: the file, the line, and what to fix."""
+
+    @pytest.mark.parametrize(
+        ("content", "problem"),
+        [
+            ("debate:\n  max_rounds: 0\n", "line 2, debate.max_rounds: must be at least 1 (got 0)"),
+            (
+                "debate:\n  max_rounds: four\n",
+                "line 2, debate.max_rounds: must be a whole number (got 'four')",
+            ),
+            ("budjet:\n  per_run: 60\n", "line 1, budjet: unknown setting; did you mean 'budget'?"),
+            (
+                "debate:\n  rounds: 4\n",
+                "line 2, debate.rounds: unknown setting; did you mean 'max_rounds'?",
+            ),
+            (
+                "models:\n  writer: claude-opus-5-5\n",
+                "line 2, models.writer: unknown setting; expected one of "
+                "planner, critic, judge, verifier, explainer, scorer",
+            ),
+            (
+                "scoring:\n  thresholds:\n    moderat: 0.3\n",
+                "line 3, scoring.thresholds.moderat: unknown setting; did you mean 'moderate'?",
+            ),
+            (
+                "scoring:\n  thresholds:\n    moderate: 0.6\n    major: 0.5\n",
+                "line 2, scoring.thresholds: severity thresholds must rise strictly within (0, 1]; "
+                "got moderate=0.6, major=0.5, blocker=0.8",
+            ),
+            (
+                "scoring:\n  provider: gpt\n",
+                "line 2, scoring.provider: must be 'jev' or 'llm' (got 'gpt')",
+            ),
+            (
+                "scoring:\n  confidence_threshold: 1.5\n",
+                "line 2, scoring.confidence_threshold: must be at most 1 (got 1.5)",
+            ),
+            (
+                "models:\n  planner: claude-opus-5-5\n  critic: claude-opus-5-5\n",
+                "line 1, models: the critic must be a different model from the planner (both are "
+                "'claude-opus-5-5'): a model reviewing its own plan shares its blind spots",
+            ),
+            (
+                "models:\n  judge: ''\n",
+                "line 2, models.judge: must not be blank (got '')",
+            ),
+            (
+                "models: claude-opus-5-5\n",
+                "line 1, models: must be a section with settings indented below it, "
+                "not the text 'claude-opus-5-5'",
+            ),
+            (
+                "priorities:\n  Data Integrity: 3\n",
+                "line 2, priorities: name 'Data Integrity' must be lowercase words joined by "
+                "underscores, like data_integrity",
+            ),
+            (
+                "priorities:\n  running_cost: 2.5\n",
+                "line 2, priorities.running_cost: must be a whole number (got 2.5)",
+            ),
+            (
+                "priorities:\n  running_cost: 6\n",
+                "line 2, priorities.running_cost: must be at most 5 (got 6)",
+            ),
+            (
+                "constraints:\n  - no new managed services\n  - ''\n",
+                "line 3, constraints[1]: must not be blank (got '')",
+            ),
+            (
+                "constraints: no new managed services\n",
+                "line 1, constraints: must be a list (got 'no new managed services')",
+            ),
+            ("budget:\n  per_call: 0\n", "line 2, budget.per_call: must be more than 0 (got 0)"),
+            (
+                "budget:\n  per_call: 80\n  per_run: 60\n",
+                "line 1, budget: the per-call cap (80.0) cannot exceed the per-run cap (60.0)",
+            ),
+        ],
+    )
+    def test_each_problem_names_the_line_the_setting_and_the_fix(
+        self, tmp_path: Path, content: str, problem: str
+    ) -> None:
+        error = charter_error(tmp_path, content)
+
+        assert error.summary == "has 1 problem:"
+        assert error.problems == (problem,)
+
+    def test_every_problem_is_reported_at_once_in_file_order(self, tmp_path: Path) -> None:
+        content = "budjet:\n  per_run: 60\ndebate:\n  max_rounds: 0\nscoring:\n  provider: gpt\n"
+
+        error = charter_error(tmp_path, content)
+
+        assert str(error) == (
+            f"{error.path} has 3 problems:\n"
+            "  line 1, budjet: unknown setting; did you mean 'budget'?\n"
+            "  line 4, debate.max_rounds: must be at least 1 (got 0)\n"
+            "  line 6, scoring.provider: must be 'jev' or 'llm' (got 'gpt')"
+        )
+
+    @pytest.mark.parametrize(
+        ("content", "problem"),
+        [
+            (
+                "debate: [max_rounds: 4\n",
+                "line 2, column 1: expected ',' or ']', but got '<stream end>'",
+            ),
+            (
+                "debate:\n  max_rounds: 4\ndebate:\n  max_rounds: 2\n",
+                "line 3, column 1: duplicate key 'debate', first defined on line 1",
+            ),
+            (
+                "debate:\n  max_rounds: 4\n  max_rounds: 2\n",
+                "line 3, column 3: duplicate key 'max_rounds', first defined on line 2",
+            ),
+        ],
+    )
+    def test_broken_yaml_names_the_line_and_column(
+        self, tmp_path: Path, content: str, problem: str
+    ) -> None:
+        error = charter_error(tmp_path, content)
+
+        assert str(error) == f"{error.path} is not valid YAML:\n  {problem}"
+
+    @pytest.mark.parametrize(
+        ("content", "summary"),
+        [
+            (
+                "- models\n- debate\n",
+                "must be sections such as `models:` and `debate:`, not a list",
+            ),
+            (
+                "just some text\n",
+                "must be sections such as `models:` and `debate:`, not the text 'just some text'",
+            ),
+            (b"debate:\n  note: \xff\xfe\n", "is not UTF-8 text"),
+        ],
+    )
+    def test_a_file_that_is_not_a_charter_at_all(
+        self, tmp_path: Path, content: str | bytes, summary: str
+    ) -> None:
+        error = charter_error(tmp_path, content)
+
+        assert error.path == tmp_path / CHARTER_PATH
+        assert str(error) == f"{error.path} {summary}"
