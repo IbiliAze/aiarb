@@ -2,7 +2,7 @@
 
 **An AI architecture review board for your codebase.** Give it a feature you want to add to an existing app. One model plans it, another attacks the plan, and they argue it out against your actual code until the plan is settled. You get one polished plan, a plain-English record of every objection, and a short list of the decisions only you can make.
 
-> **Status: 1.0.0.** aiarb is not on public PyPI: it is published to a private GitLab registry, as below.
+> **Status: 1.1.0.** aiarb is not on public PyPI: it is published to a private GitLab registry, as below.
 
 ## Why
 
