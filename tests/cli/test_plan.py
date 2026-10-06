@@ -177,7 +177,7 @@ class TestPause:
         assert not (run_folder(repo) / "plan.md").exists()
 
     def test_asks_for_the_decisions_when_someone_is_there(self, repo: Path) -> None:
-        ports = scenario("decision")
+        ports = scenario("decision", asking=True)
 
         outcome = aiarb(
             repo,
@@ -204,7 +204,7 @@ class TestPause:
             FEATURE,
             "--max-rounds",
             "1",
-            ports=scenario("decision"),
+            ports=scenario("decision", asking=True),
             can_ask=True,
             input="\n",
         )
@@ -226,6 +226,61 @@ class TestPause:
         )
 
         assert outcome.code == 3
+
+
+class TestPlannerQuestions:
+    def test_asks_the_planners_questions_and_it_drafts_on_the_answers(self, repo: Path) -> None:
+        ports = scenario("clarify")
+
+        outcome = aiarb(
+            repo, "plan", "-f", FEATURE, ports=ports, can_ask=True, input="1\nKeep it simple.\n"
+        )
+
+        ports.assert_finished()
+        assert outcome.code == 0
+        assert "The planner has 2 questions before it drafts the plan." in outcome.stderr
+        assert "Q-1  Is the queue per tenant or global?" in outcome.stderr
+        assert "1. Per tenant (recommended)  Each tenant gets its own queue." in outcome.stderr
+        drafting = ports.agent.calls[1].prompt
+        assert "Answer: Per tenant" in drafting
+        assert "Answer: Keep it simple." in drafting
+
+    def test_a_blank_answer_leaves_the_question_to_the_planner(self, repo: Path) -> None:
+        ports = scenario("clarify")
+
+        outcome = aiarb(repo, "plan", "-f", FEATURE, ports=ports, can_ask=True, input="\n\n")
+
+        ports.assert_finished()
+        assert outcome.code == 0
+        assert ports.agent.calls[1].prompt.count("Answer: Left to the planner") == 2
+
+    def test_stopping_at_a_question_leaves_the_run_waiting_for_answers(
+        self, repo: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        def stop(*args: object, **kwargs: object) -> str:
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr("aiarb.cli.session.Prompt.ask", stop)
+
+        outcome = aiarb(repo, "plan", "-f", FEATURE, ports=scenario("clarify"), can_ask=True)
+
+        assert outcome.code == 130
+        assert outcome.json["status"] == "waiting_for_answers"
+        assert [q["id"] for q in outcome.json["questions"]] == ["Q-1", "Q-2"]
+        assert "Waiting for your answers to 2 questions from the planner." in outcome.stderr
+        assert (
+            f'aiarb resume {RUN_ID} --no-input --decide Q-1="..." --decide Q-2="..."'
+            in outcome.stderr
+        )
+
+    def test_no_input_drafts_without_asking(self, repo: Path) -> None:
+        ports = scenario("clean_settle")
+
+        outcome = aiarb(repo, "plan", "-f", FEATURE, "--no-input", ports=ports, can_ask=True)
+
+        ports.assert_finished()
+        assert outcome.code == 0
+        assert "Nobody can answer questions in this run" in ports.agent.calls[0].prompt
 
 
 class TestStopped:

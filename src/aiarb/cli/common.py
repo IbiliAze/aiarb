@@ -59,7 +59,8 @@ def charter_of(setup: Setup, repo: Path) -> Charter:
         fail(setup, str(error))
 
 
-def context_for(setup: Setup, charter: Charter, repo: Path) -> RunContext:
+def context_for(setup: Setup, charter: Charter, repo: Path, *, can_ask: bool) -> RunContext:
+    """The run's context. The planner may ask questions only if someone can answer."""
     try:
         ports = setup.ports(charter, repo)
     except MissingKeyError as error:
@@ -70,6 +71,7 @@ def context_for(setup: Setup, charter: Charter, repo: Path) -> RunContext:
         agent=ports.agent,
         scorer=ports.scorer,
         confirmer=ports.confirmer,
+        planner_may_ask=can_ask,
         redactor=setup.redactor,
     )
 

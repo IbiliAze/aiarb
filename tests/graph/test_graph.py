@@ -358,7 +358,7 @@ class TestTimeouts:
         configured = {name for name, spec in nodes.items() if spec.retry_policy and spec.timeout}
 
         assert configured == set(TIMEOUTS)
-        assert set(nodes) - configured == {"scan", "decide", "finalise"}
+        assert set(nodes) - configured == {"scan", "clarify", "decide", "finalise"}
         assert nodes["respond"].retry_policy == builder.AGENT_RETRY
 
 

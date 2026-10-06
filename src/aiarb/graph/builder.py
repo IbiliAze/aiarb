@@ -1,6 +1,8 @@
 """The debate, assembled as a LangGraph graph.
 
     scan → draft_plan → critique → triage
+    draft_plan → clarify if the planner asked the user questions, then back to
+               draft_plan with the answers
     triage   → respond, or rescore if nothing is left to debate
     respond  → rule
     rule     → verify if facts are disputed, otherwise on as after verify
@@ -74,7 +76,9 @@ _FIXED_STEPS = 8
 """The most steps outside the rounds in one invocation: scan, draft_plan,
 critique, triage, judge, rescore, explain and finalise. A run that needs
 decisions pauses at decide instead, and is finished by a later invocation with
-its own count."""
+its own count. So does a planner that asks questions: it pauses at clarify, and
+the invocation that resumes it runs clarify and draft_plan in place of scan and
+draft_plan."""
 
 _STEPS_PER_ROUND = 3
 """respond, rule and verify."""
@@ -107,6 +111,7 @@ def build_graph(
     graph.add_node("rule", nodes.rule, retry_policy=retry_policy, timeout=TIMEOUTS["rule"])  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("verify", nodes.verify, retry_policy=retry_policy, timeout=TIMEOUTS["verify"])  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("judge", nodes.judge, retry_policy=retry_policy, timeout=TIMEOUTS["judge"])  # pyright: ignore[reportUnknownMemberType]
+    graph.add_node("clarify", nodes.clarify)  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("decide", nodes.decide)  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("rescore", nodes.rescore, retry_policy=retry_policy, timeout=TIMEOUTS["rescore"])  # pyright: ignore[reportUnknownMemberType]
     graph.add_node("explain", nodes.explain, retry_policy=retry_policy, timeout=TIMEOUTS["explain"])  # pyright: ignore[reportUnknownMemberType]
@@ -114,7 +119,8 @@ def build_graph(
 
     graph.add_edge(START, "scan")
     graph.add_edge("scan", "draft_plan")
-    graph.add_edge("draft_plan", "critique")
+    graph.add_conditional_edges("draft_plan", routing.after_draft)
+    graph.add_edge("clarify", "draft_plan")
     graph.add_edge("critique", "triage")
     graph.add_conditional_edges("triage", routing.after_triage)
     graph.add_edge("respond", "rule")

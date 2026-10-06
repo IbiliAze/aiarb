@@ -19,6 +19,7 @@ from aiarb.cli.common import charter_of
 from aiarb.cli.init import init_repo
 from aiarb.cli.plan import start_run
 from aiarb.cli.resume import resume_run
+from aiarb.cli.session import clarifying
 from aiarb.cli.setup import ExitCode
 from aiarb.config.charter import CHARTER_PATH
 from aiarb.graph import runner
@@ -79,8 +80,13 @@ def _offer_latest(setup: Setup, repo: Path) -> ExitCode | None:
     except Exception:
         return None
     if latest.request is not None:
-        count = plural(len(latest.request["questions"]), "trade-off")
-        question = f"Run {latest.run_id} is waiting for your decisions on {count}. Answer them now?"
+        count = len(latest.request["questions"])
+        waiting = (
+            f"your decisions on {plural(count, 'trade-off')}"
+            if clarifying(latest.request) is None
+            else f"your answers to {plural(count, 'question')}"
+        )
+        question = f"Run {latest.run_id} is waiting for {waiting}. Answer them now?"
     elif latest.stopped:
         question = f"Run {latest.run_id} stopped part way. Carry it on?"
     else:

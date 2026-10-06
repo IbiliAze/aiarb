@@ -1,0 +1,61 @@
+# The planner asks two questions before drafting, for a run someone can answer.
+# Once answered, it drafts in the same session, and the critic is shown the
+# answers. Then as clean_settle: one objection fixed, one minor note. Exit 0.
+agent:
+  - schema: Opening
+    output:
+      answer:
+        kind: questions
+        questions:
+          - question: Is the queue per tenant or global?
+            why: It decides where the queue's places are kept.
+            options:
+              - {label: Per tenant, description: Each tenant gets its own queue., recommended: true}
+              - {label: Global, description: One queue for everyone.}
+          - question: Should admitted users skip the queue on a reload?
+            why: It decides whether places outlive a session.
+            options:
+              - {label: Keep their place, description: A cookie holds the place.}
+              - {label: Start again, description: Simpler; reloads lose the place.}
+    cost: {usd: 1}
+  - schema: Opening
+    contains: "Q-1: Is the queue per tenant or global?"
+    output:
+      answer: {kind: plan, plan: "# Queue\n\nKeep a queue per tenant, in memory."}
+    cost: {usd: 1}
+  - schema: Critique
+    contains: "<user_answers>"
+    output:
+      objections:
+        - claim: An in-memory queue is lost on every deploy.
+          type: design
+          severity: major
+          evidence: [{kind: plan, section: Queue}]
+        - claim: The queue size constant has no comment.
+          type: design
+          severity: minor
+          evidence: [{kind: code, path: src/queue.py, start_line: 3}]
+    cost: {usd: 1}
+  - schema: Responses
+    output:
+      plan: "# Queue\n\nKeep a queue per tenant in Redis, with a comment on its size."
+      answers:
+        - {id: OBJ-1, response: fix, note: Moved the queue to Redis., changed: [{kind: plan, section: Queue}]}
+    cost: {usd: 0.5}
+  - schema: Rulings
+    output:
+      rulings:
+        - id: OBJ-1
+          verdict: accept
+          note: Redis survives deploys.
+          resolution: {kind: plan_change, sections: [{kind: plan, section: Queue}]}
+    cost: {usd: 0.25}
+  - schema: Explanation
+    output:
+      summary: The review is over.
+      items:
+        - {id: OBJ-1, title: The queue is lost on every deploy, problem: Queue places were kept in memory., consequence: Every deploy would drop everyone's place., outcome: "Fixed: places are now stored in Redis."}
+        - {id: OBJ-2, title: An unexplained constant, problem: The queue size has no comment., consequence: A future change could get it wrong., outcome: "Passed to the planner as a note."}
+scorer:
+  - {call: score, contains: OBJ-1, value: 0.6, cost: {usd: 0.01}}
+  - {call: score, contains: OBJ-2, value: 0.1, cost: {usd: 0.01}}

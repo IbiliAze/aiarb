@@ -25,3 +25,4 @@ the decisions were made.
 | [0013](0013-redact-what-is-shown-not-what-is-checkpointed.md) | Redact secrets from what is shown and written, not from checkpoints |
 | [0014](0014-the-charter-is-per-repo-and-settings-come-from-the-environment.md) | The charter is per repo and strict; personal settings come only from the environment |
 | [0015](0015-released-to-a-private-gitlab-registry.md) | Releases go to a private GitLab package registry, not PyPI |
+| [0016](0016-the-planner-may-ask-before-it-drafts.md) | The planner may ask the user questions before it drafts, between turns |

@@ -68,6 +68,32 @@ def merge_sessions(current: Mapping[Role, str], update: Mapping[Role, str]) -> d
     return {**current, **update}
 
 
+class Choice(TypedDict):
+    label: str
+    description: str
+    recommended: bool
+
+
+class PlannerQuestion(TypedDict):
+    """A question the planner asked the user before drafting."""
+
+    id: str
+    """Q-1, Q-2 and so on, counted across every round of questions in the run."""
+    batch: int
+    """Which round of questions it was asked in, from 1."""
+    question: str
+    why: str
+    """What in the plan turns on the answer."""
+    options: list[Choice]
+
+
+class Clarification(PlannerQuestion):
+    """A planner's question with the user's answer."""
+
+    answer: str
+    """The user's answer. Blank leaves it to the planner."""
+
+
 class RunState(TypedDict):
     feature: str | None
     """What the user wants to build, if they said."""
@@ -77,6 +103,12 @@ class RunState(TypedDict):
     """The repo fact sheet from the scan, as the agents are shown it."""
     plan: str
     """The current plan, in Markdown. Empty until drafted."""
+    questions: list[PlannerQuestion]
+    """The planner's questions waiting for the user's answers. Runs started
+    before planners could ask have no value: read it with `.get`."""
+    clarifications: list[Clarification]
+    """Every question the planner asked, with the user's answer. Runs started
+    before planners could ask have no value: read it with `.get`."""
     round: int
     """0 for the opening; the planner's response starts each later round."""
     max_rounds: int | None
@@ -98,6 +130,8 @@ class StateUpdate(TypedDict, total=False):
 
     facts: str
     plan: str
+    questions: list[PlannerQuestion]
+    clarifications: list[Clarification]
     round: int
     max_rounds: int | None
     debate_start: int
@@ -119,6 +153,8 @@ def initial_state(
         given_plans=list(given_plans),
         facts="",
         plan="",
+        questions=[],
+        clarifications=[],
         round=0,
         max_rounds=max_rounds,
         debate_start=0,

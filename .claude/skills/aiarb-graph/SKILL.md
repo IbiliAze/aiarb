@@ -67,8 +67,9 @@ Routers live in `routing.py` and return a `Literal` of node names.
   if set, else the charter's. Both the limit and the stall rule count from
   `debate_start`, which `runner.reopen` sets
   ([ADR-0010](../../../docs/adr/0010-reopening-restarts-the-debate-from-triage.md)).
-- Pausing is `interrupt()` in `nodes/decide.py`; resuming sends
-  `Command(resume=answers)`. A run that has asked its questions again can show
+- Pausing is `interrupt()` in `nodes/decide.py` (trade-offs) and
+  `nodes/clarify.py` (the planner's questions), told apart by the request's
+  `kind`; resuming sends `Command(resume=answers)`. A run that has asked its questions again can show
   no `next` step while paused, which is why `RunResult.finished` also checks it
   is not paused.
 

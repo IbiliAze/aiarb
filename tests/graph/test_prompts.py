@@ -14,7 +14,7 @@ from tests.graph.test_nodes import objection
 
 if TYPE_CHECKING:
     from aiarb.domain.ledger import Objection
-    from aiarb.graph.state import Role, RunState
+    from aiarb.graph.state import Clarification, Role, RunState
 
 CHARTER = Charter.model_validate(
     {
@@ -36,6 +36,23 @@ def state(*items: Objection, round: int = 0, **fields: Any) -> RunState:
     }
     base.update(changes)  # type: ignore[typeddict-item]
     return base
+
+
+def clarification(id: str, answer: str, batch: int = 1) -> Clarification:
+    return {
+        "id": id,
+        "batch": batch,
+        "question": f"Question {id}?",
+        "why": "It changes the plan.",
+        "options": [
+            {"label": "Yes", "description": "Do it.", "recommended": True},
+            {"label": "No", "description": "Do not.", "recommended": False},
+        ],
+        "answer": answer,
+    }
+
+
+ANSWERED = [clarification("Q-1", "Ten minutes, per seat."), clarification("Q-2", "")]
 
 
 def tags(prompt: str) -> list[str]:
@@ -113,6 +130,33 @@ class TestThePlanner:
 
         assert "state that as your first assumption" in text
 
+    def test_without_anyone_to_answer_states_its_choices_as_assumptions(self) -> None:
+        text = prompts.draft(state(), CHARTER)
+
+        assert "Nobody can answer questions in this run" in text
+        assert "ask the user before drafting" not in text
+
+    def test_may_ask_the_user_before_drafting(self) -> None:
+        text = prompts.draft(state(), CHARTER, may_ask=True)
+
+        assert tags(text) == ["feature", "charter", "repo_facts"]
+        assert "ask the user before drafting; otherwise draft the plan now" in text
+
+    def test_drafts_on_the_users_answers_with_the_brief_again(self) -> None:
+        text = prompts.draft(state(clarifications=ANSWERED), CHARTER)
+
+        assert text.startswith(prompts.brief("planner"))
+        assert tags(text) == ["feature", "user_answers", "charter", "repo_facts"]
+        assert "The user has answered your questions" in text
+        assert "Q-1: Question Q-1?\n  Answer: Ten minutes, per seat." in text
+        assert "Q-2: Question Q-2?\n  Answer: Left to the planner" in text
+        assert "you may ask about that instead" not in text
+
+    def test_may_follow_up_on_the_answers(self) -> None:
+        text = prompts.draft(state(clarifications=ANSWERED), CHARTER, may_ask=True)
+
+        assert "you may ask about that instead" in text
+
     def test_responds_to_each_objection_with_its_history(self) -> None:
         rejected = objection("OBJ-1", status=Status.ANSWERED).transition(
             Status.OPEN, actor=Actor.CRITIC, round=1, note="Still loses holds on restart."
@@ -144,6 +188,12 @@ class TestTheCritic:
         assert "<plan>\n## Summary\n\nHold seats in Postgres.\n</plan>" in text
         assert "outside the review" not in text
 
+    def test_is_shown_the_users_answers_to_the_planner(self) -> None:
+        text = prompts.critique(state(clarifications=ANSWERED), CHARTER)
+
+        assert tags(text) == ["feature", "user_answers", "plan", "charter", "repo_facts"]
+        assert "Answer: Ten minutes, per seat." in text
+
     def test_is_told_when_the_user_brought_the_plan(self) -> None:
         text = prompts.critique(state(given_plans=["Use Redis."]), CHARTER)
 
@@ -172,6 +222,11 @@ class TestTheOthers:
 
         assert "Decide OBJ-1" in text
         assert tags(text) == ["objection", "plan", "charter", "repo_facts"]
+
+    def test_the_judge_is_shown_the_users_answers_to_the_planner(self) -> None:
+        text = prompts.judge(state(clarifications=ANSWERED), objection("OBJ-1"), CHARTER)
+
+        assert tags(text) == ["objection", "user_answers", "plan", "charter", "repo_facts"]
 
     def test_the_explainer_gets_every_objection_and_what_each_status_means(self) -> None:
         items = [

@@ -35,7 +35,8 @@ from aiarb.graph.nodes import (
     triage,
     verify,
 )
-from aiarb.graph.state import RunState, initial_state
+from aiarb.graph.nodes.draft_plan import QUESTION_ROUNDS
+from aiarb.graph.state import Clarification, RunState, initial_state
 from aiarb.ports.calls import Cost, RetryableCallError
 from aiarb.ports.scorer import Judgement, Level
 from tests.fakes import AgentStep, ScorerStep, ScriptedCodeAgent, ScriptedScorer
@@ -59,6 +60,47 @@ def runtime(
             confirmer=scripted,
         )
     )
+
+
+def asking(rt: Runtime[RunContext], agent: ScriptedCodeAgent | None = None) -> Runtime[RunContext]:
+    """The runtime of a run someone can answer: the planner may ask questions."""
+    changes: dict[str, Any] = {"planner_may_ask": True}
+    if agent is not None:
+        changes["agent"] = agent
+    return Runtime(context=replace(rt.context, **changes))
+
+
+QUESTION = {
+    "question": "Is the queue per tenant or global?",
+    "why": "It decides where places are kept.",
+    "options": [
+        {
+            "label": "Per tenant",
+            "description": "Each tenant gets its own queue.",
+            "recommended": True,
+        },
+        {"label": "Global", "description": "One queue for everyone."},
+    ],
+}
+
+
+def opening(*questions: dict[str, Any]) -> dict[str, Any]:
+    """The planner's step asking these questions."""
+    return {
+        "schema": "Opening",
+        "output": {"answer": {"kind": "questions", "questions": list(questions)}},
+    }
+
+
+def clarified(id: str, *, batch: int) -> Clarification:
+    return {
+        "id": id,
+        "batch": batch,
+        "question": "Global?",
+        "why": "Scope.",
+        "options": [],
+        "answer": "Per tenant.",
+    }
 
 
 def fakes(rt: Runtime[RunContext]) -> tuple[ScriptedCodeAgent, ScriptedScorer]:
@@ -150,11 +192,77 @@ class TestDraftPlan:
         agent, _ = fakes(rt)
         assert update == {
             "plan": "# Queue",
+            "questions": [],
             "costs": {"planner": Cost(usd=2)},
             "sessions": {"planner": "session-1"},
         }
         assert agent.calls[0].model == Charter().models.planner
         assert agent.calls[0].repo == tmp_path.resolve()
+
+    async def test_may_ask_the_user_questions_instead(self, tmp_path: Path) -> None:
+        rt = asking(runtime(tmp_path, agent=[opening(QUESTION, QUESTION)]))
+
+        update = await draft_plan(state(), rt)
+
+        assert "plan" not in update
+        assert [(q["id"], q["batch"]) for q in update["questions"]] == [("Q-1", 1), ("Q-2", 1)]
+        assert update["questions"][0]["options"][0] == {
+            "label": "Per tenant",
+            "description": "Each tenant gets its own queue.",
+            "recommended": True,
+        }
+        assert update["sessions"] == {"planner": "session-1"}
+
+    async def test_may_draft_straight_away_when_it_could_ask(self, tmp_path: Path) -> None:
+        plan = {"answer": {"kind": "plan", "plan": "# Queue"}}
+        rt = asking(runtime(tmp_path, agent=[{"schema": "Opening", "output": plan}]))
+
+        update = await draft_plan(state(), rt)
+
+        assert update["plan"] == "# Queue"
+        assert update["questions"] == []
+
+    async def test_carries_on_its_session_with_the_answers(self, tmp_path: Path) -> None:
+        agent = ScriptedCodeAgent(
+            [AgentStep.model_validate(opening(QUESTION))], sessions=["session-1"]
+        )
+        rt = asking(runtime(tmp_path), agent=agent)
+        answered = state(clarifications=[clarified("Q-1", batch=1)])
+        answered["sessions"] = {"planner": "session-1"}
+
+        update = await draft_plan(answered, rt)
+
+        assert agent.calls[0].session_id == "session-1"
+        assert "<user_answers>" in agent.calls[0].prompt
+        assert [(q["id"], q["batch"]) for q in update["questions"]] == [("Q-2", 2)]
+
+    async def test_drafts_without_asking_after_the_last_round_of_questions(
+        self, tmp_path: Path
+    ) -> None:
+        agent = ScriptedCodeAgent(
+            [AgentStep.model_validate({"schema": "PlanDraft", "output": {"plan": "# Queue"}})],
+            sessions=["session-1"],
+        )
+        rt = asking(runtime(tmp_path), agent=agent)
+        answered = state(
+            clarifications=[
+                clarified("Q-1", batch=1),
+                clarified("Q-2", batch=QUESTION_ROUNDS),
+            ]
+        )
+        answered["sessions"] = {"planner": "session-1"}
+
+        update = await draft_plan(answered, rt)
+
+        assert update["plan"] == "# Queue"
+        assert "Nobody can answer questions" not in agent.calls[0].prompt
+
+    async def test_never_asks_when_nobody_can_answer(self, tmp_path: Path) -> None:
+        rt = runtime(tmp_path, agent=[{"schema": "PlanDraft", "output": {"plan": "# Queue"}}])
+
+        await draft_plan(state(), rt)
+
+        assert fakes(rt)[0].calls[0].schema.__name__ == "PlanDraft"
 
     async def test_given_plans_are_used_without_calling_the_planner(self, tmp_path: Path) -> None:
         rt = runtime(tmp_path)

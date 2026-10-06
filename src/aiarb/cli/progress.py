@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 DOING: Mapping[str, str] = {
     "scan": "Scanning the repo",
     "draft_plan": "Planner drafting the plan",
+    "clarify": "Waiting for your answers",
     "critique": "Critic raising objections",
     "triage": "Scoring the objections",
     "respond": "Planner answering the objections",
@@ -40,6 +41,7 @@ DOING: Mapping[str, str] = {
 DONE: Mapping[str, str] = {
     "scan": "Scanned the repo",
     "draft_plan": "Planner drafted the plan",
+    "clarify": "Took your answers",
     "critique": "Critic raised its objections",
     "triage": "Scored the objections",
     "respond": "Planner answered the objections",
@@ -130,6 +132,8 @@ class LiveProgress:
 def _label(labels: Mapping[str, str], step: str, state: RunState) -> str:
     if step == "draft_plan" and state["given_plans"]:
         return "Took in your plan" if labels is DONE else "Taking in your plan"
+    if step == "draft_plan" and labels is DONE and state.get("questions"):
+        return "Planner has questions for you"
     return labels.get(step, step)
 
 

@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import os
 import shutil
+import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -33,7 +35,16 @@ from aiarb.domain.ledger import (
 from aiarb.domain.scoring import Severity
 from aiarb.graph import prompts
 from aiarb.graph.context import RunContext
-from aiarb.graph.nodes import critique, draft_plan, explain, judge, respond, rule, verify
+from aiarb.graph.nodes import (
+    clarify,
+    critique,
+    draft_plan,
+    explain,
+    judge,
+    respond,
+    rule,
+    verify,
+)
 from aiarb.graph.state import RunState, initial_state
 from aiarb.output import Report, ledger, plan
 from aiarb.scan.facts import build
@@ -159,6 +170,59 @@ async def test_the_planner_drafts_a_plan(repo: Path) -> None:
     assert plan.count("\n## ") >= 3
     assert "app/" in plan
     assert update["costs"]["planner"].usd > 0
+
+
+CLARIFY = sys.modules["aiarb.graph.nodes.clarify"]
+"""The module, which the package's `clarify` function hides by name."""
+
+VAGUE = "Add rate limiting."
+"""A feature with open questions the code cannot answer: what to limit, by whom,
+and what a limited caller sees."""
+
+
+async def test_the_planner_asks_about_a_vague_feature_then_drafts_on_the_answers(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rt = runtime(repo)
+    rt = Runtime(context=replace(rt.context, planner_may_ask=True))
+    run = state(repo, plan="", feature=VAGUE)
+
+    asked = await draft_plan(run, rt)
+
+    questions = asked.get("questions", [])
+    show("planner: questions", "\n\n".join(_shown(q) for q in questions))
+    assert questions, "a feature this vague should get questions"
+    assert all(2 <= len(q["options"]) <= 4 for q in questions)
+    first = questions[0]["options"][0]["label"]
+    answers = {q["id"]: (first if n == 0 else "") for n, q in enumerate(questions)}
+    run.update(asked)  # type: ignore[typeddict-item]
+    monkeypatch.setattr(CLARIFY, "interrupt", lambda *_, **__: answers)
+    run.update(clarify(run))  # type: ignore[typeddict-item]
+
+    drafted = await draft_plan(run, rt)
+    if drafted.get("questions"):
+        # It may follow up once; leave those to it, and it must then draft.
+        show("planner: follow-up", "\n\n".join(_shown(q) for q in drafted["questions"]))
+        run.update(drafted)  # type: ignore[typeddict-item]
+        follow_up = {q["id"]: "" for q in drafted["questions"]}
+        monkeypatch.setattr(CLARIFY, "interrupt", lambda *_, **__: follow_up)
+        run.update(clarify(run))  # type: ignore[typeddict-item]
+        drafted = await draft_plan(run, rt)
+
+    plan = drafted["plan"]
+    show("planner: draft on the answers", plan)
+    assert plan.count("\n## ") >= 3
+    assumptions = plan.split("## Assumptions", 1)[-1].split("\n## ", 1)[0]
+    assert "## Assumptions" in plan, "the user's answers belong under Assumptions"
+    assert "user" in assumptions.lower(), "answers should be noted as the user's"
+
+
+def _shown(question: Any) -> str:
+    options = "\n".join(
+        f"  {n}. {o['label']}{' (recommended)' if o['recommended'] else ''}: {o['description']}"
+        for n, o in enumerate(question["options"], start=1)
+    )
+    return f"{question['id']}  {question['question']}\n  why: {question['why']}\n{options}"
 
 
 async def test_the_critic_raises_objections(repo: Path) -> None:

@@ -1,5 +1,5 @@
 """Running a run from the command line: progress while it goes, the user's
-decisions when it pauses, and what it came to, as a summary on standard error
+answers and decisions when it pauses, and what it came to, as a summary on standard error
 and JSON on standard output. What the agents wrote is redacted before it is
 shown.
 """
@@ -10,7 +10,7 @@ import asyncio
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import typer
 from rich.markup import escape
@@ -33,11 +33,16 @@ if TYPE_CHECKING:
     from rich.console import Console
 
     from aiarb.graph.context import RunContext
+    from aiarb.graph.nodes.clarify import ClarifyRequest
     from aiarb.graph.nodes.decide import DecisionRequest, Question
     from aiarb.graph.runner import Progress, RunResult
+    from aiarb.graph.state import PlannerQuestion
     from aiarb.observe.redact import Redactor
 
+RequestT = TypeVar("RequestT", "DecisionRequest", "ClarifyRequest")
+
 WAITING = "waiting_for_decisions"
+WAITING_FOR_ANSWERS = "waiting_for_answers"
 STOPPED = "stopped"
 OVER_BUDGET = "over_budget"
 
@@ -99,7 +104,12 @@ class Session:
         result = await begin(progress)
         progress.idle()
         while result.request is not None and self.can_ask:
-            answers = ask_decisions(self.setup, result.request)
+            questions = clarifying(result.request)
+            answers = (
+                ask_decisions(self.setup, deciding(result.request))
+                if questions is None
+                else ask_clarifications(self.setup, questions)
+            )
             if answers is None:
                 break
             result = await runner.resume(
@@ -156,10 +166,16 @@ class Session:
             data = _finished(report, folder)
             _print_finished(console, report, folder, redactor)
         elif result is not None and result.request is not None:
-            request = _redacted(redactor, result.request)
             code = ExitCode.WAITING
-            data = _waiting(request)
-            _print_waiting(console, run_id, request)
+            questions = clarifying(result.request)
+            if questions is None:
+                request = _redacted(redactor, deciding(result.request))
+                data = _waiting(request)
+                _print_waiting(console, run_id, request)
+            else:
+                questions = _redacted(redactor, questions)
+                data = _waiting(questions, status=WAITING_FOR_ANSWERS)
+                _print_waiting_for_answers(console, run_id, questions)
         elif over_budget is not None:
             code = ExitCode.OVER_BUDGET
             data = {"status": OVER_BUDGET, "error": error, "budget_usd": over_budget.budget}
@@ -202,8 +218,22 @@ def _finished(report: Report, folder: Path) -> dict[str, Any]:
     }
 
 
-def _waiting(request: DecisionRequest) -> dict[str, Any]:
-    data: dict[str, Any] = {"status": WAITING, "questions": request["questions"]}
+def clarifying(request: DecisionRequest | ClarifyRequest | None) -> ClarifyRequest | None:
+    """The planner's questions, if that is what the run paused for."""
+    if request is None or request.get("kind") != "clarify":
+        return None
+    return cast("ClarifyRequest", request)
+
+
+def deciding(request: DecisionRequest | ClarifyRequest) -> DecisionRequest:
+    """The trade-offs the run paused for. Runs paused before planners could ask
+    questions have no `kind`."""
+    assert request.get("kind", "decide") == "decide", "the run is waiting for answers"
+    return cast("DecisionRequest", request)
+
+
+def _waiting(request: DecisionRequest | ClarifyRequest, status: str = WAITING) -> dict[str, Any]:
+    data: dict[str, Any] = {"status": status, "questions": request["questions"]}
     if "problem" in request:
         data["problem"] = request["problem"]
     return data
@@ -212,8 +242,8 @@ def _waiting(request: DecisionRequest) -> dict[str, Any]:
 _STYLES = {"settled": "green", "settled_with_open_items": "yellow", "not_ready": "red"}
 
 
-def _redacted(redactor: Redactor, request: DecisionRequest) -> DecisionRequest:
-    return cast("DecisionRequest", redactor.data(request))
+def _redacted(redactor: Redactor, request: RequestT) -> RequestT:
+    return cast("RequestT", redactor.data(request))
 
 
 def _print_finished(console: Console, report: Report, folder: Path, redactor: Redactor) -> None:
@@ -283,6 +313,36 @@ def _print_waiting(console: Console, run_id: str, request: DecisionRequest) -> N
     console.print(f'  aiarb resume {run_id} --evidence ID="..."', soft_wrap=True)
 
 
+def _print_waiting_for_answers(console: Console, run_id: str, request: ClarifyRequest) -> None:
+    questions = request["questions"]
+    console.print()
+    console.print(
+        f"[bold]Waiting for your answers to {plural(len(questions), 'question')} "
+        "from the planner.[/]"
+    )
+    if "problem" in request:
+        console.print(f"[red]Your last answers were refused: {escape(request['problem'])}.[/]")
+    for question in questions:
+        _print_planner_question(console, question)
+    answer = " ".join(f'--decide {q["id"]}="..."' for q in questions)
+    console.print("Answer here with:")
+    console.print(f"  aiarb resume {run_id}", soft_wrap=True)
+    console.print("Or give your answers, leaving out any you want the planner to decide:")
+    console.print(f"  aiarb resume {run_id} --no-input {answer}", soft_wrap=True)
+
+
+def _print_planner_question(console: Console, question: PlannerQuestion) -> None:
+    console.print()
+    console.print(f"[bold]{question['id']}[/]  {escape(question['question'])}")
+    console.print(f"[dim]{escape(question['why'])}[/]")
+    for number, option in enumerate(question["options"], start=1):
+        recommended = " [green](recommended)[/]" if option["recommended"] else ""
+        console.print(
+            f"  {number}. [bold]{escape(option['label'])}[/]{recommended}  "
+            f"[dim]{escape(option['description'])}[/]"
+        )
+
+
 def _print_question(console: Console, question: Question) -> None:
     console.print()
     console.print(f"[bold]{question['id']}[/]  {escape(question['claim'])}")
@@ -312,6 +372,36 @@ def _print_over_budget(console: Console, run_id: str, over: OverBudget) -> None:
     )
 
 
+def ask_clarifications(setup: Setup, request: ClarifyRequest) -> dict[str, str]:
+    """Ask the user the planner's questions. An answer is an option's number, the
+    user's own words, or blank to leave the question to the planner."""
+    console = setup.console
+    request = _redacted(setup.redactor, request)
+    questions = request["questions"]
+    console.print()
+    console.print(
+        f"[bold]The planner has {plural(len(questions), 'question')} before it drafts the "
+        "plan.[/] Pick a number, type your own answer, or leave it blank to let the "
+        "planner decide."
+    )
+    if "problem" in request:
+        console.print(f"[red]Your last answers were refused: {escape(request['problem'])}.[/]")
+    answers: dict[str, str] = {}
+    for question in questions:
+        _print_planner_question(console, question)
+        answer = Prompt.ask("Your answer", console=console, default="", show_default=False)
+        answers[question["id"]] = _chosen(question, answer.strip())
+    return answers
+
+
+def _chosen(question: PlannerQuestion, answer: str) -> str:
+    """The option an answer picks by number, or the answer as the user wrote it."""
+    options = question["options"]
+    if answer.isdigit() and 1 <= int(answer) <= len(options):
+        return options[int(answer) - 1]["label"]
+    return answer
+
+
 def ask_decisions(setup: Setup, request: DecisionRequest) -> dict[str, str] | None:
     """Ask the user to decide each question. None if they leave one blank, to
     decide later."""
@@ -336,14 +426,29 @@ def ask_decisions(setup: Setup, request: DecisionRequest) -> dict[str, str] | No
 
 
 def fill_in(
-    setup: Setup, request: DecisionRequest, given: Mapping[str, str], *, can_ask: bool
+    setup: Setup,
+    request: DecisionRequest | ClarifyRequest,
+    given: Mapping[str, str],
+    *,
+    can_ask: bool,
 ) -> dict[str, str] | None:
     """The answers to the questions: those given, and the rest asked for if
-    someone can answer. None if some are left unanswered."""
-    asked = [question for question in request["questions"] if question["id"] not in given]
+    someone can answer. None if some trade-offs are left undecided. The planner's
+    questions nobody can answer are left to the planner."""
+    questions = clarifying(request)
+    if questions is not None:
+        unasked = [question for question in questions["questions"] if question["id"] not in given]
+        if not unasked:
+            return dict(given)
+        if not can_ask:
+            return {**given, **{question["id"]: "" for question in unasked}}
+        answers = ask_clarifications(setup, {**questions, "questions": unasked})
+        return {**given, **answers}
+    decisions = deciding(request)
+    asked = [question for question in decisions["questions"] if question["id"] not in given]
     if not asked:
         return dict(given)
     if not can_ask:
         return None
-    rest = ask_decisions(setup, {**request, "questions": asked})
+    rest = ask_decisions(setup, {**decisions, "questions": asked})
     return None if rest is None else {**given, **rest}

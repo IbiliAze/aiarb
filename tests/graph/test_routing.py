@@ -20,6 +20,7 @@ from aiarb.domain.ledger import (
 from aiarb.domain.scoring import Severity
 from aiarb.graph.context import RunContext
 from aiarb.graph.routing import (
+    after_draft,
     after_judge,
     after_round,
     after_rule,
@@ -111,6 +112,25 @@ def awaiting_decision(item: Objection, round: int) -> Objection:
     return item.transition(
         Status.AWAITING_DECISION, actor=Actor.SYSTEM, round=round, note="For the user."
     )
+
+
+class TestAfterDraft:
+    def test_questions_from_the_planner_pause_for_answers(self) -> None:
+        asking = state()
+        asking["questions"] = [
+            {"id": "Q-1", "batch": 1, "question": "Global?", "why": "Scope.", "options": []}
+        ]
+
+        assert after_draft(asking) == "clarify"
+
+    def test_a_plan_goes_to_the_critic(self) -> None:
+        assert after_draft(state()) == "critique"
+
+    def test_runs_from_before_planners_could_ask_go_to_the_critic(self) -> None:
+        old = state()
+        del old["questions"]  # type: ignore[misc]
+
+        assert after_draft(old) == "critique"
 
 
 class TestAfterTriage:

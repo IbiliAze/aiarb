@@ -108,6 +108,55 @@ class PlanDraft(_Output):
     """The whole plan in Markdown, with a heading for each section."""
 
 
+class QuestionOption(_Output):
+    """One answer the user can pick."""
+
+    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
+    """The answer in a few words, such as `Per tenant`."""
+    description: Text
+    """What choosing it would mean for the plan."""
+    recommended: bool = False
+    """True for the one option you would choose. Mark at most one."""
+
+
+class PlanQuestion(_Output):
+    """A question for the user, whose answer would change the plan."""
+
+    question: Text
+    """The question, asked plainly and ending with a question mark."""
+    why: Text
+    """What in the plan turns on the answer, and why the code cannot settle it."""
+    options: list[QuestionOption] = Field(min_length=2, max_length=4)
+    """The answers you see as reasonable. The user can also give their own."""
+
+
+class AskFirst(_Output):
+    """Questions for the user, asked before you draft the plan. You draft it once
+    they answer."""
+
+    kind: Literal["questions"]
+    questions: list[PlanQuestion] = Field(min_length=1, max_length=4)
+    """Only what the repo cannot tell you and the plan depends on. Ask the
+    questions whose answers matter most."""
+
+
+class DraftNow(_Output):
+    """The first plan for the feature, drafted without asking anything."""
+
+    kind: Literal["plan"]
+    plan: PlanText
+    """The whole plan in Markdown, with a heading for each section."""
+
+
+class Opening(_Output):
+    """Your first turn: questions for the user, or the plan itself when nothing
+    the plan depends on is unclear."""
+
+    answer: Annotated[AskFirst | DraftNow, Field(discriminator="kind")]
+    """Questions, when the answers would change the plan and the repo cannot give
+    them; otherwise the plan."""
+
+
 class Fix(_Output):
     """The plan was changed to deal with the objection."""
 

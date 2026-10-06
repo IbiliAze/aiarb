@@ -1,8 +1,9 @@
 import asyncio
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 import yaml
@@ -25,6 +26,10 @@ from tests.fakes import (
     ScriptedScorer,
     explanation,
 )
+
+if TYPE_CHECKING:
+    from aiarb.graph.nodes.clarify import ClarifyRequest
+    from aiarb.graph.nodes.decide import DecisionRequest
 
 SCENARIOS = Path(__file__).parent.parent / "fixtures" / "scenarios"
 FEATURE = "Add a virtual waiting room."
@@ -80,6 +85,72 @@ async def paused_run(tmp_path: Path, repo: Path) -> str:
     return result.run_id
 
 
+def asking(repo: Path) -> tuple[RunContext, Scenario]:
+    """The clarify scenario, for a run someone can answer."""
+    ctx, scenario = scenario_context(repo, "clarify", max_rounds=1)
+    return replace(ctx, planner_may_ask=True), scenario
+
+
+class TestPlannerQuestions:
+    async def test_pause_for_answers_reload_and_draft_on_them(
+        self, tmp_path: Path, repo: Path
+    ) -> None:
+        ctx, scenario = asking(repo)
+
+        paused = await start(store(tmp_path), ctx, initial_state(feature=FEATURE))
+
+        assert paused.paused
+        assert paused.request is not None
+        assert paused.request.get("kind") == "clarify"
+        questions = cast("ClarifyRequest", paused.request)["questions"]
+        assert [q["id"] for q in questions] == ["Q-1", "Q-2"]
+        assert questions[0]["options"][0]["recommended"]
+        assert paused.state["plan"] == ""
+        assert paused.next == ("clarify",)
+
+        finished = await resume(store(tmp_path), RUN_ID, ctx, {"Q-1": " Per tenant ", "Q-2": ""})
+
+        scenario.assert_finished()
+        assert finished.finished
+        assert finished.state["status"] is RunStatus.SETTLED
+        assert [(c["id"], c["answer"]) for c in finished.state["clarifications"]] == [
+            ("Q-1", "Per tenant"),
+            ("Q-2", ""),
+        ]
+        assert finished.state["questions"] == []
+        first, second = scenario.agent.calls[:2]
+        assert first.session_id is None
+        assert second.session_id is not None
+        assert "Q-1: Is the queue per tenant or global?\n  Answer: Per tenant" in second.prompt
+        assert "Answer: Left to the planner" in second.prompt
+        # Two turns of 1 to ask and draft, and 0.5 to respond.
+        assert finished.state["costs"]["planner"].usd == 2.5
+
+    async def test_answers_that_miss_a_question_are_refused_and_asked_again(
+        self, tmp_path: Path, repo: Path
+    ) -> None:
+        ctx, _ = asking(repo)
+        await start(store(tmp_path), ctx, initial_state(feature=FEATURE))
+
+        again = await resume(store(tmp_path), RUN_ID, ctx, {"Q-1": "Global", "Q-9": "?"})
+
+        assert again.paused
+        assert again.request is not None
+        assert again.request.get("problem") == "unanswered: Q-2; not asked: Q-9"
+        assert again.state["clarifications"] == []
+
+    async def test_a_run_that_cannot_ask_never_pauses_for_questions(
+        self, tmp_path: Path, repo: Path
+    ) -> None:
+        ctx, scenario = scenario_context(repo, "clean_settle", max_rounds=1)
+
+        finished = await start(store(tmp_path), ctx, initial_state(feature=FEATURE))
+
+        scenario.assert_finished()
+        assert finished.finished
+        assert finished.state["clarifications"] == []
+
+
 class TestDecisions:
     async def test_run_to_the_interrupt_reload_from_disk_resume_and_finish(
         self, tmp_path: Path, repo: Path
@@ -92,7 +163,8 @@ class TestDecisions:
         assert paused.run_id == RUN_ID
         assert (tmp_path / "runs" / RUN_ID / CHECKPOINTS).is_file()
         assert paused.request is not None
-        [question] = paused.request["questions"]
+        assert paused.request.get("kind") == "decide"
+        [question] = cast("DecisionRequest", paused.request)["questions"]
         assert question["id"] == "OBJ-1"
         assert question["claim"] == "Small batches are fairer but make the queue slower."
         assert "Speed matters more." in question["detail"]

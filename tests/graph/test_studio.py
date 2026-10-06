@@ -41,4 +41,4 @@ def test_the_context_form_offers_settings_not_ports() -> None:
     schema = load_graph().get_context_jsonschema()
 
     assert schema is not None
-    assert set(schema["properties"]) == {"charter", "repo"}
+    assert set(schema["properties"]) == {"charter", "repo", "planner_may_ask"}

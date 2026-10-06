@@ -29,9 +29,11 @@ The system prompt tells the agent it is advising, not changing anything.
 - Agents cannot run tests, builds or linters to check a claim. The verifier
   settles facts by reading; what reading cannot settle becomes a task for the
   user ([ADR-0006](0006-leftovers-are-handled-by-type.md)).
-- Agents cannot ask the user questions mid-run (AskUserQuestion is not loaded).
-  Assumptions are written into the plan instead, and trade-offs come to the user
-  at the decision step.
+- Agents cannot ask the user questions mid-session (AskUserQuestion is not
+  loaded). The planner may ask between turns, before it drafts, when someone can
+  answer ([ADR-0016](0016-the-planner-may-ask-before-it-drafts.md)); otherwise
+  assumptions are written into the plan, and trade-offs come to the user at the
+  decision step.
 - Agents can still read secrets in the repo, such as a `.env`, and quote them.
   Outputs are redacted ([ADR-0013](0013-redact-what-is-shown-not-what-is-checkpointed.md)).
 

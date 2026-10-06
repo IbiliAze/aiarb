@@ -25,6 +25,7 @@ from aiarb.schemas.outputs import (
     Explanation,
     Fix,
     JudgeRuling,
+    Opening,
     PlanDraft,
     Rating,
     Rebuttal,
@@ -37,6 +38,15 @@ CODE = {"kind": "code", "path": "src/queue.py", "start_line": 10, "end_line": 12
 PLAN = {"kind": "plan", "section": "Queue storage", "quote": "Keep places in Redis."}
 FIX = {"id": "OBJ-1", "response": "fix", "note": "Moved to Postgres.", "changed": [PLAN]}
 REBUTTAL = {"id": "OBJ-2", "response": "rebuttal", "note": "Already retried.", "evidence": [CODE]}
+OPTIONS = [
+    {"label": "Per tenant", "description": "Each tenant gets its own queue.", "recommended": True},
+    {"label": "Global", "description": "One queue for everyone."},
+]
+QUESTION = {
+    "question": "Is the queue per tenant or global?",
+    "why": "It decides where the queue's state is kept.",
+    "options": OPTIONS,
+}
 ACCEPT = {
     "id": "OBJ-1",
     "verdict": "accept",
@@ -53,6 +63,8 @@ ANSWER_SCHEMAS = [
 VALID: list[tuple[type[BaseModel], dict[str, Any]]] = [
     (PlanDraft, {"plan": "# Waiting room\n\nAdmit users in batches."}),
     (PlanDraft, {"plan": "Intro line.\n\n## Approach\n\nBatches."}),
+    (Opening, {"answer": {"kind": "questions", "questions": [QUESTION]}}),
+    (Opening, {"answer": {"kind": "plan", "plan": "# Waiting room\n\nBatches."}}),
     (
         Critique,
         {
@@ -144,6 +156,10 @@ def responses(*answers: dict[str, Any]) -> dict[str, Any]:
     return {"plan": "# Queue storage\n\nPostgres.", "answers": list(answers)}
 
 
+def opening(kind: str = "questions", **answer: Any) -> dict[str, Any]:
+    return {"answer": {"kind": kind, **answer}}
+
+
 def rulings(*items: dict[str, Any]) -> dict[str, Any]:
     return {"rulings": list(items)}
 
@@ -156,6 +172,16 @@ REFUSED_BY_THE_SCHEMA: list[tuple[str, type[BaseModel], dict[str, Any]]] = [
     ("a plan with no headings", PlanDraft, {"plan": "Admit users in batches."}),
     ("a revised plan with no headings", Responses, {"plan": "Postgres.", "answers": [FIX]}),
     ("a blank plan", PlanDraft, {"plan": ""}),
+    ("an opening that asks nothing", Opening, opening(questions=[])),
+    ("more than four questions", Opening, opening(questions=[QUESTION] * 5)),
+    (
+        "a question with one option",
+        Opening,
+        opening(questions=[{**QUESTION, "options": OPTIONS[:1]}]),
+    ),
+    ("a question with no reason", Opening, opening(questions=[without(QUESTION, "why")])),
+    ("an opening plan with no headings", Opening, opening("plan", plan="Batches.")),
+    ("an opening of an unknown kind", Opening, opening("maybe", plan="# Plan")),
     (
         "an objection that cites nothing",
         Critique,

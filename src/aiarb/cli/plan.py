@@ -77,7 +77,7 @@ def start_run(
     console = setup.console
     charter = charter_of(setup, repo)
     given_plans = [read_text(setup, path, "the plan") for path in plans]
-    context = context_for(setup, charter, repo)
+    context = context_for(setup, charter, repo, can_ask=can_ask)
     feature = (feature or "").strip() or None
     if not (repo / CHARTER_PATH).exists():
         console.print(f"[dim]No {CHARTER_PATH}: using the defaults. `aiarb init` writes one.[/]")

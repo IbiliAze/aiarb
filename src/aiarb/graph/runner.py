@@ -27,6 +27,7 @@ from langgraph.types import Command, Durability
 import aiarb
 from aiarb.domain.ledger import Actor, Status, TransitionError
 from aiarb.graph.builder import build_graph, run_config
+from aiarb.graph.nodes.clarify import ClarifyRequest
 from aiarb.graph.nodes.decide import DecisionRequest, decided
 from aiarb.graph.routing import round_limit
 from aiarb.graph.state import RunState, total_cost
@@ -99,8 +100,9 @@ class _Unwatched:
 class RunResult:
     run_id: str
     state: RunState
-    request: DecisionRequest | None = None
-    """The questions the run is waiting on, when it paused for decisions."""
+    request: DecisionRequest | ClarifyRequest | None = None
+    """The questions the run is waiting on, when it paused for decisions or for
+    answers to the planner's questions."""
     next: tuple[str, ...] = ()
     """The steps the run takes when it carries on. None once it has finished."""
     spent: Cost = field(default_factory=Cost)
@@ -348,7 +350,13 @@ class _Run:
         spent = round(result.spent.usd, 6)
         if result.request is not None:
             questions = [question["id"] for question in result.request["questions"]]
-            self.log.write("paused", questions=questions, round=state["round"], spent_usd=spent)
+            self.log.write(
+                "paused",
+                kind=result.request.get("kind", "decide"),
+                questions=questions,
+                round=state["round"],
+                spent_usd=spent,
+            )
         elif result.finished:
             status = state["status"].value if state["status"] is not None else None
             self.log.write("finished", status=status, rounds=state["round"], spent_usd=spent)

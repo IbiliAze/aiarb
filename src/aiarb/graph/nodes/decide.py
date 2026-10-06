@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
 
 from langgraph.types import interrupt
 
@@ -24,6 +24,8 @@ class Question(TypedDict):
 class DecisionRequest(TypedDict):
     """What the run passes out when it pauses for the user's decisions."""
 
+    kind: NotRequired[Literal["decide"]]
+    """Runs paused before planners could ask questions leave it out."""
     questions: list[Question]
     problem: NotRequired[str]
     """Why the last answers were refused, when they were."""
@@ -46,7 +48,10 @@ def decide(state: RunState) -> StateUpdate:
     waiting = in_status(state, Status.AWAITING_DECISION)
     if not waiting:
         return {}
-    request: DecisionRequest = {"questions": [_question(item) for item in waiting]}
+    request: DecisionRequest = {
+        "kind": "decide",
+        "questions": [_question(item) for item in waiting],
+    }
     while True:
         answers = interrupt(request, response_schema=ANSWERS_SCHEMA)
         problem = _problem(answers, waiting)

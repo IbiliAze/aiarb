@@ -18,7 +18,7 @@ from aiarb.cli.common import (
     max_rounds_option,
     setup_of,
 )
-from aiarb.cli.session import Session, fill_in
+from aiarb.cli.session import Session, clarifying, fill_in
 from aiarb.graph import runner
 from aiarb.graph.runner import CannotReopen, NotWaiting
 from aiarb.ports.run_store import RunNotFound
@@ -46,8 +46,8 @@ def resume(
             "--decide",
             "-d",
             metavar="ID=DECISION",
-            help="Your decision on a trade-off the run is waiting on. Repeat it for each. "
-            "ID=@file reads the decision from a file.",
+            help="Your decision on a trade-off the run is waiting on, or your answer to a "
+            "question from the planner (Q-1). Repeat it for each. ID=@file reads it from a file.",
         ),
     ] = None,
     evidence: Annotated[
@@ -107,8 +107,14 @@ def resume_run(
     session = Session(setup, store, charter, can_ask)
     # Set up the agent and scorers before asking for decisions, so a setup
     # problem does not throw the answers away.
-    will_run = evidence or before.stopped or (before.paused and (decisions or can_ask))
-    context = context_for(setup, charter, repo) if will_run else None
+    # Questions from the planner go ahead unanswered, left to it, when nobody
+    # can answer them.
+    will_run = (
+        evidence
+        or before.stopped
+        or (before.paused and (decisions or can_ask or clarifying(before.request)))
+    )
+    context = context_for(setup, charter, repo, can_ask=can_ask) if will_run else None
     begin = _plan(setup, before, decisions, evidence, max_rounds, can_ask)
     if begin is None or context is None:
         return session.report(before)

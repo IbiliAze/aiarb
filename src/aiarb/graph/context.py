@@ -38,6 +38,9 @@ class RunContext:
     confirmer: Annotated[Scorer, SkipJsonSchema()]
     """A language model that confirms blocker calls, which decide that a plan is
     not ready. It may be the scorer itself."""
+    planner_may_ask: bool = False
+    """Whether the planner may ask the user questions before drafting. Only when
+    someone is there to answer them; otherwise it states its assumptions."""
     run_dir: Annotated[Path | None, SkipJsonSchema()] = None
     """The run's folder, named by its ID, where the final step writes the run's
     files. None writes no files, as in Studio. The runner sets it."""

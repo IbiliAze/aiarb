@@ -48,15 +48,38 @@ def brief(role: Role) -> str:
     return (files("aiarb") / "prompts" / f"{role}.md").read_text(encoding="utf-8").strip()
 
 
-def draft(state: RunState, charter: Charter) -> str:
+def draft(state: RunState, charter: Charter, *, may_ask: bool = False) -> str:
+    """The planner's first plan. When `may_ask`, it may ask the user questions
+    first instead; once they answer, it is given the answers and asked again."""
     feature = state["feature"] or (
         "Not given. Work out the most valuable next change from the repo, and state that "
         "as your first assumption."
     )
+    answered = state.get("clarifications", [])
+    if answered:
+        task = "The user has answered your questions, below. Draft the plan on their answers."
+        if may_ask:
+            task += (
+                " If an answer raises something new that the plan depends on and the repo "
+                "cannot tell you, you may ask about that instead."
+            )
+    elif may_ask:
+        task = (
+            "Plan the feature below. Read the code it touches first. If something the plan "
+            "depends on is unclear and the repo cannot tell you, ask the user before drafting; "
+            "otherwise draft the plan now."
+        )
+    else:
+        task = (
+            "Draft the plan for the feature below. Read the code it touches first. Nobody can "
+            "answer questions in this run: where the feature is unclear, choose, and state "
+            "what you chose as an assumption."
+        )
     return _prompt(
         "planner",
-        "Draft the plan for the feature below. Read the code it touches first.",
+        task,
         feature=feature,
+        **_answers(state),
         charter=_charter(charter),
         repo_facts=state["facts"],
     )
@@ -73,6 +96,7 @@ def critique(state: RunState, charter: Charter) -> str:
         f"Raise your objections to the plan below. {source}Read the code it touches, and "
         "check what it says about the codebase against the files.",
         feature=state["feature"] or "Not given: the plan states what it assumed.",
+        **_answers(state),
         plan=state["plan"],
         charter=_charter(charter),
         repo_facts=state["facts"],
@@ -123,6 +147,7 @@ def judge(state: RunState, item: Objection, charter: Charter) -> str:
         "judge",
         f"Decide {item.id}, below. Its history holds both sides' arguments.",
         objection=describe(item),
+        **_answers(state),
         plan=state["plan"],
         charter=_charter(charter),
         repo_facts=state["facts"],
@@ -191,6 +216,20 @@ def _charter(charter: Charter) -> str:
         lines.append("Constraints every plan must keep to:")
         lines += [f"- {constraint}" for constraint in charter.constraints]
     return "\n".join(lines) or "No priorities or constraints are set: use sound judgement."
+
+
+def _answers(state: RunState) -> dict[str, str]:
+    """The user's answers to the planner's questions, as a `user_answers` input,
+    or nothing when none were asked."""
+    answered = state.get("clarifications", [])
+    if not answered:
+        return {}
+    blocks = [
+        f"{item['id']}: {item['question']}\n  Answer: "
+        + (item["answer"].strip() or "Left to the planner, who states its choice as an assumption.")
+        for item in answered
+    ]
+    return {"user_answers": "\n\n".join(blocks)}
 
 
 def _describe_all(items: Iterable[Objection]) -> str:

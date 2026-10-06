@@ -37,8 +37,8 @@ aiarb plan
 Scan the repo ──────────── builds a fact sheet, no LLM
    │
    ▼
-Planner drafts the plan ── model A explores the repo
-   │
+Planner drafts the plan ── model A explores the repo, and may ask you
+   │                         a few questions first, as Claude Code does
    ▼
 Critic raises objections ─ model B, each one cites code
    │
@@ -114,6 +114,8 @@ aiarb plan --plan ./waiting-room-plan.md
 
 Run `aiarb` with no arguments for a guided, interactive session. Every option can be left empty; aiarb infers what it can from the repo and states its assumptions.
 
+If the feature leaves something open that the plan depends on, the planner asks you first: up to four questions, each with options and the one it recommends. Pick a number, type your own answer, or leave it blank to let the planner choose. It asks only at a terminal; without one, or with `--no-input`, it states its assumptions in the plan instead.
+
 While a run goes, aiarb shows each step, the round, how many objections are open and what the run has spent. If the run needs your decisions, it asks for them there and then. Without a terminal, or with `--no-input`, it stops and prints the questions and the command to answer them:
 
 ```bash
@@ -126,7 +128,7 @@ Got new evidence after a run, such as load-test results? Reopen the items it bea
 aiarb resume --evidence OBJ-1=@load-test-results.md
 ```
 
-`ID=@file` reads a decision or evidence from a file. Without a run ID, `aiarb resume` takes the most recently active run. A run that stopped part way, from a failed call or Ctrl-C, carries on from its last finished step.
+`--decide` also answers the planner's questions, by their ids (`Q-1`). `ID=@file` reads a decision, an answer or evidence from a file. Without a run ID, `aiarb resume` takes the most recently active run. A run that stopped part way, from a failed call or Ctrl-C, carries on from its last finished step.
 
 ## Commands
 
@@ -201,7 +203,7 @@ Model IDs are any that Claude Code accepts. The planner and critic must be diffe
 
 | Role      | Job                                                        |
 | --------- | ---------------------------------------------------------- |
-| Planner   | Drafts the plan, then fixes or rebuts each objection       |
+| Planner   | Asks what it must, drafts the plan, then fixes or rebuts each objection |
 | Critic    | Raises objections, then rules on the planner's responses   |
 | Verifier  | Settles factual disputes by reading the code               |
 | Judge     | Breaks deadlocks left after the final round                |
@@ -238,7 +240,7 @@ Each run writes to `.aiarb/runs/<date>-<name>/`, which `.aiarb/.gitignore` keeps
 | Stopped                 | aiarb could not run as asked, or the run stopped part way; a stopped run can be resumed | `4` |
 | Over budget             | The run spent `budget.per_run`; raise it, then `aiarb resume`    | `5`       |
 
-Ctrl-C exits with `130`, and the run can be resumed.
+Ctrl-C exits with `130`, and the run can be resumed. Stopped at one of the planner's questions, its JSON status is `waiting_for_answers`, and `aiarb resume` asks them again.
 
 A run never forces agreement. If the round limit is reached, each leftover item is handled by type:
 

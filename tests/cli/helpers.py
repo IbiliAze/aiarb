@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import yaml
 from rich.console import Console
 from typer.testing import CliRunner, Result
 
@@ -25,8 +26,16 @@ FEATURE = "Add a virtual waiting room."
 RUN_ID = "2026-10-05-add-a-virtual-waiting-room"
 
 
-def scenario(name: str) -> Scenario:
-    return Scenario.from_yaml(SCENARIOS / f"{name}.yaml")
+def scenario(name: str, *, asking: bool = False) -> Scenario:
+    """A scripted scenario. With `asking`, for a run someone can answer: the
+    planner is offered questions, and drafts straight away instead."""
+    if not asking:
+        return Scenario.from_yaml(SCENARIOS / f"{name}.yaml")
+    data = yaml.safe_load((SCENARIOS / f"{name}.yaml").read_text(encoding="utf-8"))
+    draft = next(step for step in data["agent"] if step["schema"] == "PlanDraft")
+    draft["schema"] = "Opening"
+    draft["output"] = {"answer": {"kind": "plan", **draft["output"]}}
+    return Scenario.from_data(data)
 
 
 def nothing() -> Scenario:

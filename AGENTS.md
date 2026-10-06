@@ -68,7 +68,9 @@ live tests) build real adapters. Tests run the whole graph on scripted fakes in
 
 ```
 scan → draft_plan → critique → triage ─┬─▶ respond → rule ─┬─▶ verify ─┐
-                                       │      ▲            │           │
+        │    ▲                         │      ▲            │           │
+        ▼    │                         │      │            │           │
+       clarify  (planner's questions)  │      │            │           │
                                        │      └────────────┴───────────┤ another round
                                        │                               ▼
                                        └───────────────▶ judge → decide → rescore → explain → finalise
@@ -115,8 +117,11 @@ with a fresh set of rounds ([ADR-0010](docs/adr/0010-reopening-restarts-the-deba
 - **Runner.** `graph/runner.py` starts, resumes and reopens runs, streams
   progress, and wraps the ports in `observe/calls.py` so every call is logged
   and counted against `budget.per_run` ([ADR-0012](docs/adr/0012-the-budget-counts-every-call.md)).
-- **Pausing for the user.** `nodes/decide.py` calls `interrupt()`. The CLI asks
-  at a terminal or prints the `aiarb resume --decide` command.
+- **Pausing for the user.** `nodes/decide.py` (trade-offs) and `nodes/clarify.py`
+  (the planner's questions before it drafts) call `interrupt()`; the request's
+  `kind` tells them apart. The CLI asks at a terminal or prints the
+  `aiarb resume --decide` command. The planner is offered questions only when
+  someone can answer ([ADR-0016](docs/adr/0016-the-planner-may-ask-before-it-drafts.md)).
 - **Prompts.** `graph/prompts.py` builds each turn from the role's brief in
   `prompts/<role>.md`, the task, and XML-tagged inputs. Scripted fakes match on
   objection ids in the prompt.

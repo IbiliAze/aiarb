@@ -1,10 +1,15 @@
+import asyncio
 from pathlib import Path
 from typing import Any
 
 import pytest
 import yaml
 
-from tests.cli.helpers import FEATURE, RUN_ID, SCENARIOS, aiarb, scenario
+from aiarb.config.charter import Charter
+from aiarb.graph import runner
+from aiarb.graph.context import RunContext
+from aiarb.graph.state import initial_state
+from tests.cli.helpers import FEATURE, RUN_ID, SCENARIOS, aiarb, scenario, store
 from tests.fakes import AgentStep, Scenario, ScriptedCodeAgent, ScriptedScorer, explanation
 
 EVIDENCE = "Load tests show batches of 100 keep up."
@@ -148,6 +153,70 @@ class TestDecisions:
 
         assert outcome.code == 4
         assert "is not waiting for decisions" in outcome.stderr
+
+
+def waiting_for_answers(repo: Path, *, asking: bool = True) -> Scenario:
+    """A run paused for the planner's questions, as if the user stopped at the
+    first one. The rest of the clarify scenario, to carry it on; without
+    `asking`, for a run nobody can answer, where the planner cannot ask again."""
+    data: dict[str, Any] = yaml.safe_load((SCENARIOS / "clarify.yaml").read_text())
+    first, *rest = data["agent"]
+    if not asking:
+        rest[0] = {
+            **rest[0],
+            "schema": "PlanDraft",
+            "output": {"plan": rest[0]["output"]["answer"]["plan"]},
+        }
+    opening = Scenario.from_data({"agent": [first]})
+    ctx = RunContext(
+        charter=Charter(),
+        repo=repo,
+        agent=opening.agent,
+        scorer=opening.scorer,
+        confirmer=opening.scorer,
+        planner_may_ask=True,
+    )
+    result = asyncio.run(runner.start(store(repo), ctx, initial_state(feature=FEATURE)))
+    assert result.paused
+    agent = ScriptedCodeAgent(
+        [AgentStep.model_validate(step) for step in rest], sessions=["session-1"]
+    )
+    scorer = Scenario.from_data({"scorer": data["scorer"]}).scorer
+    return Scenario(agent, scorer)
+
+
+class TestPlannerQuestions:
+    def test_answers_given_and_the_rest_left_to_the_planner(self, repo: Path) -> None:
+        ports = waiting_for_answers(repo, asking=False)
+
+        outcome = aiarb(repo, "resume", "-d", "Q-1=Global", "--no-input", ports=ports)
+
+        ports.assert_finished()
+        assert outcome.code == 0
+        drafting = ports.agent.calls[0].prompt
+        assert "Answer: Global" in drafting
+        assert (
+            "Q-2: Should admitted users skip the queue on a reload?\n  Answer: Left to the planner"
+            in drafting
+        )
+
+    def test_asks_the_rest_when_someone_is_there(self, repo: Path) -> None:
+        ports = waiting_for_answers(repo)
+
+        outcome = aiarb(repo, "resume", "-d", "Q-1=Global", ports=ports, can_ask=True, input="2\n")
+
+        ports.assert_finished()
+        assert outcome.code == 0
+        assert "Q-1  Is the queue" not in outcome.stderr
+        assert "Answer: Start again" in ports.agent.calls[0].prompt
+
+    def test_an_answer_to_a_question_not_asked_is_refused(self, repo: Path) -> None:
+        waiting_for_answers(repo)
+
+        outcome = aiarb(repo, "resume", "-d", "Q-7=Yes", "--no-input")
+
+        assert outcome.code == 4
+        assert "not waiting for a decision on Q-7; it asks about Q-1, Q-2" in outcome.stderr
 
 
 class TestEvidence:

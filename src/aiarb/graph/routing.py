@@ -23,10 +23,16 @@ STALL_ROUNDS = 2
 _IN_DEBATE = frozenset({Status.OPEN, Status.ANSWERED, Status.DISPUTED})
 """Statuses the planner, critic and verifier are still arguing over."""
 
+AfterDraft = Literal["clarify", "critique"]
 AfterTriage = Literal["respond", "rescore"]
 AfterRule = Literal["verify", "respond", "judge", "decide", "rescore"]
 AfterRound = Literal["respond", "judge", "decide", "rescore"]
 AfterJudge = Literal["decide", "rescore"]
+
+
+def after_draft(state: RunState) -> AfterDraft:
+    """Pause for the user's answers if the planner asked questions, or critique the plan."""
+    return "clarify" if state.get("questions") else "critique"
 
 
 def after_triage(state: RunState) -> AfterTriage:

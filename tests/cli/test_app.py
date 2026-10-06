@@ -23,7 +23,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 class TestGuided:
     def test_writes_a_charter_asks_what_to_build_and_runs(self, repo: Path) -> None:
-        ports = scenario("clean_settle")
+        ports = scenario("clean_settle", asking=True)
         answers = ["y", FEATURE, "", "", "y"]
 
         outcome = aiarb(repo, ports=ports, can_ask=True, input="\n".join(answers) + "\n")
