@@ -52,9 +52,10 @@ publish:
     - test "v$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)" = "$CI_COMMIT_TAG"
     - uv build
     # --check-url skips files the registry already has, so a re-run is harmless.
+    # It carries the token itself: uv sends the publish credentials only with uploads.
     - >
       uv publish
       --publish-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi"
-      --check-url "$CI_API_V4_URL/projects/$CI_PROJECT_ID/packages/pypi/simple"
+      --check-url "https://gitlab-ci-token:$CI_JOB_TOKEN@${CI_SERVER_HOST}/api/v4/projects/$CI_PROJECT_ID/packages/pypi/simple"
       --username gitlab-ci-token
       --password "$CI_JOB_TOKEN"

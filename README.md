@@ -285,13 +285,17 @@ uv run pytest
 
 The full graph runs in tests on fake adapters, so the test suite makes no API calls.
 
+[AGENTS.md](AGENTS.md) has the working notes: architecture, the rules that are enforced and the conventions. [docs/adr/](docs/adr/) records why the design is the way it is, and `.claude/skills/` has step-by-step guides for changing the graph, the agents, the tests, the CLI and releases.
+
 There are also live tests, which run each role and scorer through real Claude Code, mostly on Haiku, and call Jev when `TYPESAFE_API_KEY` is set. A full live run costs about a dollar:
 
 ```bash
 AIARB_LIVE_TESTS=1 uv run pytest tests/live
 ```
 
-Pushing a `v*` tag publishes that version to the GitLab registry, once lint, type checks and tests pass (`.gitlab-ci.yml`). The tag must match the version in `pyproject.toml`.
+`make help` lists the tasks: `make check` lints, type-checks and tests, as CI does.
+
+To release, set the version in `pyproject.toml`, commit, and tag the commit `v<version>`. Pushing the tag to GitLab publishes it to the registry once the checks pass (`.gitlab-ci.yml`). To publish by hand instead, run `make publish`. It builds the tagged commit, not your working tree, and needs a GitLab token that can write to the registry, as `UV_PUBLISH_USERNAME` and `UV_PUBLISH_PASSWORD`, exported or in `.env`. Files the registry already has are skipped.
 
 To see the graph in [LangGraph Studio](https://docs.langchain.com/langgraph-platform/langgraph-studio), run `uv run langgraph dev`.
 
