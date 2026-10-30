@@ -19,8 +19,9 @@ public PyPI ([ADR-0015](../../../docs/adr/0015-released-to-a-private-gitlab-regi
    own version), update the README if behaviour changed, and commit.
 3. Tag that commit: `git tag -a v<version> -m "aiarb <version>"`.
 4. Push: `git push origin main && git push gitlab main v<version>`.
-5. CI publishes it once lint and tests pass. The publish job refuses a tag that
-   does not match `pyproject.toml`.
+5. CI publishes it once lint, tests and the dependency audit (`test:audit`,
+   [ADR-0017](../../../docs/adr/0017-a-known-advisory-in-a-locked-dependency-blocks-the-release.md))
+   pass. The publish job refuses a tag that does not match `pyproject.toml`.
 
 **CI needs a runner.** The project's instance runners are off, and the group's
 only runner (`ibi-mac`) takes jobs tagged `macos` only. Until that is sorted,

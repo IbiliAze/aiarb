@@ -40,3 +40,18 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - run: uv sync --locked
       - run: uv run pytest
+
+  # Dependency gate, the same as GitLab's test:audit. osv-scanner reads uv.lock
+  # and fails on any advisory OSV knows that osv-scanner.toml does not list, dev
+  # tools included. The checkout is mounted read-only. Same scanner and digest as
+  # .gitlab-ci.yml; bump them together. GitHub publishes nothing, so no job here
+  # waits for it. See ADR-0017.
+  audit:
+    name: test:audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: >
+          docker run --rm -v "$PWD":/src:ro
+          ghcr.io/google/osv-scanner:v2.6.0@sha256:afd838850ac1a0fcc15ff4a041dc9ba11123c3f0d2666217a5f0fcf9222b55fa
+          scan source --config=/src/osv-scanner.toml -L /src/uv.lock

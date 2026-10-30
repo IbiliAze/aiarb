@@ -1,0 +1,7 @@
+# Python 3.12.12 and uv 0.9.30 are what GitLab CI's default image,
+# ghcr.io/astral-sh/uv:python3.12-bookworm, ships today (its tag floats, so
+# check it when bumping). The test job also runs 3.11 and 3.13, and
+# requires-python is >=3.11.
+[tools]
+python = "3.12.12"
+uv = "0.9.30"

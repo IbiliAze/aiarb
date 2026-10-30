@@ -1,0 +1,12 @@
+# Advisories the test:audit CI job lets through. The job fails on every other
+# advisory OSV knows for a package in uv.lock, dev tools included, and on these
+# too once their ignoreUntil date passes. Each entry says why the advisory does
+# not apply to aiarb. Delete an entry as soon as the version it was written for
+# is gone. See docs/adr/0017-a-known-advisory-in-a-locked-dependency-blocks-the-release.md.
+#
+# None today: uv.lock had no known advisory on 2026-10-30.
+#
+# [[IgnoredVulns]]
+# id = "GHSA-xxxx-xxxx-xxxx"
+# ignoreUntil = 2026-12-31
+# reason = "..."
