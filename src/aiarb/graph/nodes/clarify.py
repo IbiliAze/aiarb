@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any, Literal, NotRequired, TypedDict
+from typing import TYPE_CHECKING, Any, Literal, NotRequired
 
 from langgraph.types import interrupt
+from typing_extensions import TypedDict  # pydantic reads it on Python 3.11
 
 if TYPE_CHECKING:
     from aiarb.graph.state import Clarification, PlannerQuestion, RunState, StateUpdate

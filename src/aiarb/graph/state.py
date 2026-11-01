@@ -8,9 +8,10 @@ them and the updates combine.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Annotated, Literal, TypedDict
+from typing import TYPE_CHECKING, Annotated, Literal
 
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+from typing_extensions import TypedDict  # pydantic reads it on Python 3.11
 
 from aiarb.domain import ledger
 from aiarb.domain.ledger import Objection

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+import click
 import pytest
 from rich.console import Console
 from typer.testing import CliRunner
@@ -76,7 +77,8 @@ class TestGuided:
         outcome = aiarb(repo)
 
         assert outcome.code == 0
-        assert "Usage: aiarb" in outcome.result.stdout
+        # Rich colours the help when it sees CI, so read it without the colour.
+        assert "Usage: aiarb" in click.unstyle(outcome.result.stdout)
 
 
 def test_an_unexpected_error_exits_4_with_its_traceback(tmp_path: Path) -> None:
